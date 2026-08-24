@@ -87,11 +87,31 @@ async function loadChapter(slug) {
       <h1 style="margin-bottom: 28px; font-size: 1.8rem; font-weight: 700;">${slug.toUpperCase().replace('-', ' ')}</h1>
       <div id="manuscript-viewport" style="line-height: 1.85; font-size: 1.15rem;">${parseSentencesIntoSpans(chapterText)}</div>
     `;
-    
+    buildSubsectionNavigation();
     resetFeedbackUI();
   } catch (error) {
     canvas.innerHTML = '<h1 style="color: #ef4444; text-align: center;">Error Loading Content</h1>';
   }
+}
+function buildSubsectionNavigation() {
+  const sections = document.querySelectorAll('.manuscript-section');
+  const navContainer = document.getElementById('subsection-nav-container');
+  const linksList = document.getElementById('subsection-links');
+  linksList.innerHTML = '';
+
+  if (sections.length === 0) {
+    navContainer.style.display = 'none';
+    return;
+  }
+  
+  sections.forEach((section, index) => {
+    const sectionId = `section-anchor-${index}`;
+    section.id = sectionId;
+    const li = document.createElement('li');
+    li.innerHTML = `<a href="#${sectionId}" onclick="event.preventDefault(); document.getElementById('${sectionId}').scrollIntoView({ behavior: 'smooth' });" style="text-decoration: none; color: #4b5563; transition: color 0.15s;" onmouseover="this.style.color='#111827'" onmouseout="this.style.color='#4b5563'">${section.innerText}</a>`;
+    linksList.appendChild(li);
+  });
+  navContainer.style.display = 'block';
 }
 
 window.selectSentence = function(element, id) {

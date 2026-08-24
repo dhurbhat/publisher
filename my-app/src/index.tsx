@@ -114,6 +114,10 @@ const MainReader: FC = () => (
 
 const RightFeedbackPanel: FC = () => (
   <aside class="right-sidebar">
+    <div id="subsection-nav-container" style="margin-bottom: 24px; padding-bottom:16px; border-bottom: 1px solid #e5e7eb;display:none;">
+      <h4 style="font-size: 1rem; text-transform: uppercase; font-weight: 500; color: #6b7280;letter-spacing: 0.05em;margin-bottom: 0.5rem;">On This Page</h4>
+      <ul id="subsection-links" style="list-style: none; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem;"></ul>
+    </div>
     <h4>Comments</h4>
     <div id="comment-stream" style="color: #9ca3af; font-size: 0.9rem;">Click on any line inside the text canvas to view or drop inline notes</div>
   </aside>
