@@ -22,10 +22,56 @@ function initializeAuth() {
     authStatus.innerText = "✓ Token Active";
     authStatus.style.borderColor = "#10b981";
     authStatus.style.color = "#10b981";
+    loadChapterCatalog();
   } else {
     authStatus.innerText = "No Access Token";
     authStatus.style.borderColor = "#ef4444";
     authStatus.style.color = "#ef4444";
+  }
+}
+// NEW: Dynamic sidebar listing logic engine
+async function loadChapterCatalog() {
+  const token = localStorage.getItem('ucan_token');
+  const listElement = document.getElementById('dynamic-chapter-list');
+  if (!token || !listElement) return;
+
+  try {
+    const response = await fetch('/api/chapters', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    
+    if (data.chapters.length === 0) {
+      listElement.innerHTML = '<li style="color: #6b7280; font-size: 0.9rem;">No manuscript chapters uploaded yet.</li>';
+      return;
+    }
+
+    // Sort chapters naturally by name string patterns (handles numeric prefixes correctly)
+    const sortedChapters = data.chapters.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Generate dynamic links
+    listElement.innerHTML = sortedChapters.map(slug => {
+      // Turn slug patterns like "chapter-1-the-sos-event" into clean display names like "Chapter 1 The Sos Event"
+      let displayName = slug
+        .replace('chapter-', '')
+        .replace(/-/g, ' ');
+      displayName = displayName.replace(/^\d+[\s_.-]*/,'');
+      displayName = displayName.replace(/\b\w/g, c => c.toUpperCase()); // Capitalize words cleanly
+        
+      return `
+        <li style="margin-bottom: 8px;">
+          <a href="#" onclick="event.preventDefault(); loadChapter('${slug}')" style="text-decoration: none; color: #4b5563; font-size: 0.95rem; display: block; padding: 4px 0;" onmouseover="this.style.color='#111827'" onmouseout="this.style.color='#4b5563'">
+            ${displayName}
+          </a>
+        </li>
+      `;
+    }).join('');
+
+  } catch (error) {
+    listElement.innerHTML = '<li style="color: #ef4444; font-size: 0.9rem;">Failed to load index catalog.</li>';
   }
 }
 
