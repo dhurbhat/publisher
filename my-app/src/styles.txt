@@ -147,3 +147,54 @@
           /* Vibrant fixed highlighter block fill when active */
           border-bottom: 2px solid #eab308;
       }
+
+      /* Zero-Trust PIN Form Box styling */
+      .challenge-overlay-wrapper {
+          max-width: 420px;
+          margin: 120px auto;
+          padding: 40px 32px;
+          border: 1px solid #e5e7eb;
+          border-radius: 16px;
+          background: #ffffff;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          text-align: center;
+      }
+
+      /* Pure numeric verification spacing input tracking */
+      .pin-digit-box {
+          width: 100%;
+          padding: 14px;
+          font-size: 2rem;
+          letter-spacing: 0.6rem;
+          text-align: center;
+          font-weight: 700;
+          border: 2px solid #e5e7eb;
+          border-radius: 10px;
+          margin-bottom: 20px;
+          color: #111827;
+          background: #f9fafb;
+      }
+
+      .pin-digit-box:focus {
+          outline: none;
+          border-color: #111827;
+          background: #fff;
+      }
+
+      .unlock-btn {
+          width: 100%;
+          background: #111827;
+          color: #ffffff;
+          padding: 14px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 1rem;
+          cursor: pointer;
+          border: none;
+          transition: background 0.15s ease;
+      }
+
+      .unlock-btn:hover {
+          background: #1f2937;
+      }

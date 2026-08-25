@@ -6,7 +6,8 @@ import cssContent from './styles.txt?raw' // Import CSS as raw text for inline i
 import jsContent from './scripts.txt?raw' // Import JS as raw text for inline injection
 
 type Bindings = {
-  NOVEL_TEXT_KV: KVNamespace
+  NOVEL_TEXT_KV: KVNamespace,
+  READER_SESSION_KV: KVNamespace,
   DB: D1Database
 }
 
@@ -151,12 +152,24 @@ const ClientScripts: FC = () => {
   return <script dangerouslySetInnerHTML={{ __html: jsContent }} />
 }
 
-app.get('/', (c) => {
-  // return c.text('Hello Hono!')
+app.get('/', async (c) => {
+  const email = c.req.query('email') || '' 
+  let targetChapter = c.req.query('chapter') || ''
+  if (!targetChapter) {
+    const chapterKeys = await c.env.NOVEL_TEXT_KV.list({ prefix: 'chapter-', limit: 100 })
+    if (chapterKeys.keys.length > 0) {
+      const sortedChapters = chapterKeys.keys.sort((a,b) => a.name.localeCompare(b.name));
+      targetChapter = sortedChapters[0].name;
+    }
+    else {
+      targetChapter = 'empty-manuscript'; // Default fallback if no chapters exist
+    }
+  }
+  console.log(`Rendering main workspace for email: ${email}, chapter: ${targetChapter}`)
   return c.html(
     <html>
       <HeadStyles />
-      <body>
+      <body data-current-chapter={targetChapter} data-user-email={email}>
         <TopToolbar />
         <div class="workspace-container">
           <LefNavigation />
@@ -167,6 +180,44 @@ app.get('/', (c) => {
       </body>
     </html>
   )
+})
+
+app.post('/api/activate-session', async (c) => {
+  const { email, nonce } = await c.req.json();
+  if (!email || !nonce) {
+    return c.json({ success: false, message: 'Missing email or nonce' }, 400);
+  }
+  const rawPacket = await c.env.READER_SESSION_KV.get(`nonce:${email}`);
+  if (!rawPacket) {
+    return c.json({ success: false, message: 'Invite not valid or expired' }, 403);
+  }
+  const packet = JSON.parse(rawPacket);
+  if (packet.nonce !== nonce) {
+    return c.json({ success: false, message: 'PIN mismatch' }, 403);
+  }
+  // If we reach here, the nonce is valid. Optionally, you can delete it to prevent reuse.
+  await c.env.READER_SESSION_KV.delete(`nonce:${email}`);
+  return c.json({ success: true, ucan: packet.ucan, message: 'Nonce verified successfully' });
+})
+
+app.post('/api/store-seed-nonce', async (c) => {
+  const url = new URL(c.req.url)
+  if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+    return c.json({ success: false, message: 'Unauthorized: Local development only' }, 403);
+  } 
+  const { email, payload} = await c.req.json();
+    let parsedPayload;
+  try {
+    parsedPayload = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  } catch (err) {
+    return c.json({ success: false, message: 'Invalid payload text string encoding' }, 400);
+  }
+  if (!email || !payload) {
+    return c.json({ success: false, message: 'Missing email or payload' }, 400);
+  }
+  // Store the nonce and UCAN in KV with a TTL of 15 minutes (900 seconds)
+  await c.env.READER_SESSION_KV.put(`nonce:${email}`, typeof payload === 'string' ? payload : JSON.stringify(payload), { expirationTtl: 900 });
+  return c.json({ success: true, message: 'Nonce and UCAN stored successfully' });
 })
 
 export default app

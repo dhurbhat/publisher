@@ -13,6 +13,10 @@
     {
       "binding": "NOVEL_TEXT_KV",
       "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "binding": "READER_SESSION_KV",
+      "id": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
     }
   ],
   // "r2_buckets": [
