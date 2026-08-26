@@ -1,0 +1,76 @@
+function initializeAuth() {
+  const rawLocationSearch = window.location.search;
+  const tokenMatch = rawLocationSearch.match(/token=([^&]+)/);
+  const authStatus = document.getElementById('auth-status');
+
+  if (tokenMatch && tokenMatch[1]) {
+    localStorage.setItem('ucan_token', decodeURIComponent(tokenMatch[1]));
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  const storedToken = localStorage.getItem('ucan_token');
+  if (storedToken) {
+    authStatus.innerText = "✓ Token Active";
+    authStatus.style.borderColor = "#10b981";
+    authStatus.style.color = "#10b981";
+    loadChapterCatalog();
+    loadChapter(document.body.dataset.currentChapter || 'empty-manuscript');
+    return;
+  }
+
+  authStatus.innerText = "No Access Token";
+  authStatus.style.borderColor = "#ef4444";
+  authStatus.style.color = "#ef4444";
+
+  const email = new URLSearchParams(window.location.search).get('email');
+  if (email) {
+    renderNonceChallengeScreen(email);
+    return;
+  }
+
+  document.getElementById('text-canvas').innerHTML = `
+    <div style="text-align:center; margin-top:100px; font-family:sans-serif;">
+      <h2 style="color:#dc2626;">Access Denied</h2>
+      <p>Valid invitation token required to read this manuscript.</p>
+    </div>`;
+}
+
+function renderNonceChallengeScreen(email) {
+  document.body.innerHTML = `
+    <div class="challenge-overlay-wrapper">
+      <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; color: #111827;">Verification Code</h2>
+      <p style="font-size: 0.95rem; color: #6b7280; margin-bottom: 28px; line-height:1.4;">
+        Enter the 6-digit numeric PIN sent to your phone or email to unlock the manuscript.
+      </p>
+      <input type="text" id="nonce-input" class="pin-digit-box" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*">
+      <button onclick="submitNonceChallenge('${email}')" class="unlock-btn">Unlock Manuscript</button>
+      <p id="error-message" style="color: #dc2626; font-size: 0.88rem; margin-top: 14px; display: none; font-weight:500;"></p>
+    </div>
+  `;
+}
+
+async function submitNonceChallenge(email) {
+  const inputPin = document.getElementById('nonce-input').value.trim();
+  const errorBox = document.getElementById('error-message');
+
+  try {
+    const response = await fetch('/api/activate-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, nonce: inputPin })
+    });
+
+    const result = await response.json();
+    if (response.ok && result.success) {
+      localStorage.setItem('ucan_token', result.ucan);
+      window.location.href = window.location.origin + '/?chapter=' + encodeURIComponent(document.body.dataset.currentChapter || 'empty-manuscript');
+      return;
+    }
+
+    errorBox.innerText = result.message || 'Verification failed. Please check the code and try again.';
+    errorBox.style.display = 'block';
+  } catch (error) {
+    errorBox.innerText = 'Network error. Please try again.';
+    errorBox.style.display = 'block';
+  }
+}

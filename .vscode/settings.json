@@ -1,0 +1,15 @@
+{
+    "chat.extensionUnification.enabled": false,
+    "chat.hookFilesLocations": {
+        ".github/hooks": false,
+        ".claude/settings.local.json": false,
+        "~/.copilot/hooks": false,
+        ".claude/settings.json": false,
+        "~/.claude/settings.json": false
+    },
+    "chat.implicitContext.includeActiveEditor": false,
+    "terminal.integrated.tabs.allowAgentCliTitle": false,
+    "chat.byokUtilityModelDefault": "none",
+    "chat.titleBar.signIn.enabled": false,
+    "dictation.experimental.llmCleanup": false
+}

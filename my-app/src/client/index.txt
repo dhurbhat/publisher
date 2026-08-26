@@ -1,0 +1,8 @@
+/* Browser entrypoint: reader.js and auth.js are inlined before this code. */
+document.addEventListener('DOMContentLoaded', initializeAuth);
+
+window.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 's')) {
+        e.preventDefault();
+    }
+});

@@ -34,10 +34,22 @@ function compileAndPublish() {
   chapterFolders.forEach(folder => {
     const rawFolderName = folder.name; // e.g., "01 The SOS Event"
     const folderPath = path.join(resolvedPath, rawFolderName)
+    const normalizedFolderName = rawFolderName
+      .replace(/^\d+[\s_.-]*/, '')
+      .trim()
+      .toLowerCase()
 
     // Gather and sort sub-scene section markdown files chronologically
     const mdFiles = fs.readdirSync(folderPath)
       .filter(file => file.endsWith('.md'))
+      .filter(file => {
+        const normalizedFileName = path.basename(file, '.md')
+          .replace(/^\d+[\s_.-]*/, '')
+          .trim()
+          .toLowerCase()
+
+        return normalizedFileName !== normalizedFolderName
+      })
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
 
     if (mdFiles.length === 0) return;
@@ -49,23 +61,26 @@ function compileAndPublish() {
       .replace(/(^-|-$)/g, '')
 
     console.log(`\n📖 Compiling Chapter: "${rawFolderName}" (${mdFiles.length} scenes merged)`)
-
-    // Glue sections together into a single master chapter file text stream
-    const combinedContent = mdFiles.map(file => {
-      const rawFileName = path.basename(file, '.md')
-      // Strip sorting prefix from the scene section filename for a clean header
-      const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '')
-      const fileText = fs.readFileSync(path.join(folderPath, file), 'utf8')
-      
-      // Inject the clean scene section title as a Markdown Subtitle (##)
-      const trimmedText = fileText.trim()
-            // FIXED: Only inject the '## Title' if the text doesn't already start with that exact header
-      const alreadyHasHeader = trimmedText.startsWith(`# ${cleanSceneTitle}`) || 
-                               trimmedText.startsWith(`## ${cleanSceneTitle}`) ||
-                               trimmedText.startsWith(`${cleanSceneTitle}\n`)
-      const headerPrefix = alreadyHasHeader ? '' : `## ${cleanSceneTitle}\n\n`
-      return `${fileText.trim()}`
-    }).join('\n\n') // Merge smoothly with paragraph gaps
+    const chapterTitle = rawFolderName.replace(/^\d+[\s_.-]*/, '').trim()
+    const combinedContent = [
+      `# ${chapterTitle}\n`, // Inject chapter title as H1 header
+      ...mdFiles.map(file => {
+        const rawFileName = path.basename(file, '.md')
+        // Strip sorting prefix from the scene section filename for a clean header
+        const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '')
+        const sourceText = fs.readFileSync(path.join(folderPath, file), 'utf8').trim()
+        const sourceLines = sourceText.split(/\r?\n/)
+        const fileText = sourceLines[0].trim().toLowerCase() === `# ${chapterTitle.toLowerCase()}`
+          ? sourceLines.slice(1).join('\n').trim()
+          : sourceText
+        // Inject the clean scene section title as a Markdown Subtitle (##)
+        const alreadyHasHeader = fileText.startsWith(`# ${cleanSceneTitle}`) || 
+                                 fileText.startsWith(`## ${cleanSceneTitle}`) ||
+                                 fileText.startsWith(`${cleanSceneTitle}\n`)
+        const headerPrefix = alreadyHasHeader ? '' : `## ${cleanSceneTitle}\n\n`
+        return `${headerPrefix}${fileText}`
+      })
+    ].join('\n\n') // Merge smoothly with paragraph gaps
 
     const tempFilePath = path.join(tempDir, `${cleanSlug}.txt`)
     fs.writeFileSync(tempFilePath, combinedContent, 'utf8')
@@ -75,7 +90,7 @@ function compileAndPublish() {
       const command = `npx wrangler kv key put "${cleanSlug}" --path="${tempFilePath}" --binding=NOVEL_TEXT_KV ${destinationFlag}`
       execSync(command, { stdio: 'ignore' })
     } catch (error: any) {
-      console.error(`❌ Failed to push "${cleanChapterName}":`, error.message)
+      console.error(`❌ Failed to push "${rawFolderName}":`, error.message)
     }
   })
 
