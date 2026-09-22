@@ -1,7 +1,22 @@
-import { Hono } from 'hono'
-import type { Bindings } from '../index'
+import { FC } from 'hono/jsx'
 
-export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
+import { Hono } from 'hono'
+import type { Bindings, Variables } from '../index'
+import authContent from '../client/auth.txt?raw'
+
+export const PinScripts: FC = () => (
+   <script dangerouslySetInnerHTML={{ __html: authContent }} />
+)
+
+export function registerSessionRoutes(app: Hono<{ Bindings: Bindings; Variables: Variables }>) {
+/*  app.get('/api/claim', async (c) => {
+    const email = c.req.query('email');
+    if (!email) {
+      return c.text('Invalid invocation - Missing email', 400)
+    }
+    return c.html(renderNonceChallengeScreen(email))
+  })
+*/
   app.post('/api/activate-session', async (c) => {
     const { email, nonce } = await c.req.json()
     if (!email || !nonce) {

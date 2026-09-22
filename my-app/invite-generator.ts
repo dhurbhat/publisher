@@ -13,9 +13,10 @@ const CF_API_TOKEN = process.env.CF_API_TOKEN || "YOUR_CLOUDFLARE_API_TOKEN";
 const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID || "YOUR_PRODUCTION_READER_SESSION_KV_ID";
 const ACCOUNT_ID = process.env.ACCOUNT_ID || "YOUR_CLOUDFLARE_ACCOUNT_ID";
 
-// FIXED: Using z.unknown() ensures the internal map initialization inside iso-ucan doesn't throw a 'Cannot read properties of undefined (reading 'add')' crash.
 const ChapterReadCap = Capability.from({
-    schema: z.unknown(),
+    schema: z.object({
+        email: z.email
+    }),
     cmd: '/chapter/read',
 });
 
@@ -52,8 +53,8 @@ async function runBatchInviteGenerator() {
     console.log(`👥 Target readers (${emails.length}): ${emails.join(', ')}\n`);
 
     // 1. Read private seed securely from parent directory
-    if (!fs.existsSync('../author_private.seed')) {
-        console.error("Error: ../author_private.seed file missing!")
+    if (!fs.existsSync(authorSeedPath)) {
+        console.error(`Error: ${authorSeedPath} file missing!`)
         return
     }
     const secretHex = fs.readFileSync(authorSeedPath, 'utf8').trim()
@@ -78,7 +79,9 @@ async function runBatchInviteGenerator() {
                 iss: authorSigner,            // Author's root signing authority
                 aud: friendKeyPair.did,
                 sub: authorSigner.did,
-                pol: [],
+                pol: [
+                    ["==", ".email", email]
+                ],
                 exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 90), // 90 Days active
                 store: store
             });

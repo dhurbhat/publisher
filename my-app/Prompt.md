@@ -1,0 +1,7 @@
+This is very good so far. The above CloudflareUcanStore was only part of the larger project that of:
+1) An Author wants to "publish" their manuscript online for review and comments from friends and family. 
+2) Author creates a `delegation` of ChapterReadCap and a separate AdminCap to Worker - a cloudflare worker - AND THIS IS ONE TIME ONLY.The resulting JWTs are stored in cloudflare secrets using wrangler cli.
+3) Need code for Hono client that uses Author AdminCap to invoke /admin/invite server API
+4) the corresponding /admin/invite code that verifies the incoming call is legit from Author, delegated to Worker. This api then presents a JSX/screen that allows the Admin user to enter list of emails (comma separated is fine for now) of Reviewers that are to be invited to Review the Manuscript. The worker then generates a 6 digit nonce, performs a Worker -> Reviewer delegation of ChapterReadCap which is tied each of the emails, stores the nonce, delegationJWT and email in KV and only shares the email and nonce with the admin user.Make sure that the `pol` attribute for the delegation is specific to the email address of the Reviewer.
+5) The admin user will then share the nonce with the person out of band.
+After this will look at how the Reviewer use comes to claim their access.

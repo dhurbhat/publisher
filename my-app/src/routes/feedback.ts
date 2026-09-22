@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { getBearerToken, verifyDelegation } from '../auth/ucan'
-import type { Bindings } from '../index'
+import type { Bindings, Variables } from '../index'
 
-export function registerFeedbackRoutes(app: Hono<{ Bindings: Bindings }>) {
+export function registerFeedbackRoutes(app: Hono<{ Bindings: Bindings; Variables: Variables }>) {
   app.post('/api/feedback', async (c) => {
     let token: string
     try {

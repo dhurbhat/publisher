@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings } from '../index'
+import type { Bindings, Variables } from '../index'
 import { HeadStyles, WorkspaceLayout } from '../components/layout'
 
 const EMPTY_MANUSCRIPT = 'empty-manuscript'
@@ -14,7 +14,7 @@ async function getInitialChapter(env: Bindings, requestedChapter: string) {
   return sortedChapters[0].name
 }
 
-export function registerWorkspaceRoutes(app: Hono<{ Bindings: Bindings }>) {
+export function registerWorkspaceRoutes(app: Hono<{ Bindings: Bindings; Variables: Variables }>) {
   app.get('/', async (c) => {
     const email = c.req.query('email') || ''
     const targetChapter = await getInitialChapter(c.env, c.req.query('chapter') || '')

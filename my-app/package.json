@@ -9,6 +9,7 @@
   "dependencies": {
     "hono": "^4.13.3",
     "iso-kv": "^3.2.0",
+    "iso-ucan": "^0.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

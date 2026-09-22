@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { getBearerToken, verifyDelegation } from '../auth/ucan'
-import type { Bindings } from '../index'
+import type { Bindings, Variables } from '../index'
 
-export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
+export function registerChapterRoutes(app: Hono<{ Bindings: Bindings; Variables: Variables }>) {
   app.get('/api/chapters', async (c) => {
     let token: string
     try {

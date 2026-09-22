@@ -17,6 +17,10 @@
     {
       "binding": "READER_SESSION_KV",
       "id": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+      "binding": "UCAN_STORE_KV",
+      "id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
     }
   ],
   // "r2_buckets": [

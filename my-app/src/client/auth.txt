@@ -1,12 +1,12 @@
 function initializeAuth() {
   const rawLocationSearch = window.location.search;
-  const tokenMatch = rawLocationSearch.match(/token=([^&]+)/);
+  // const tokenMatch = rawLocationSearch.match(/token=([^&]+)/);
   const authStatus = document.getElementById('auth-status');
-
-  if (tokenMatch && tokenMatch[1]) {
-    localStorage.setItem('ucan_token', decodeURIComponent(tokenMatch[1]));
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
+  /* No need for this as we are not sending ?token anymore */
+  // if (tokenMatch && tokenMatch[1]) {
+  //   localStorage.setItem('ucan_token', decodeURIComponent(tokenMatch[1]));
+  //   window.history.replaceState({}, document.title, window.location.pathname);
+  // }
 
   const storedToken = localStorage.getItem('ucan_token');
   if (storedToken) {
