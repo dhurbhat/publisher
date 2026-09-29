@@ -3,16 +3,15 @@ import { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
 import { Store } from 'iso-ucan/store'
 import { CloudflareUcanStore } from '../cloudflare-ucan-store.js'
 import { ChapterCap } from '../chapter-cap.js'
-// import type { Env } from '../env.js'  
-import type { Bindings } from '../index'
+import type { Bindings } from '../../index.js'
+import { parse } from 'iso-did'
+import { AuthorizeRequestSchema } from '../../schemas.js'
+import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
 
 export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
-    app.post('/api/verify-nonce', async (c) => {
-        const { reviewerDid, reviewerEmail, nonce } = await c.req.json<{
-            reviewerDid: string
-            reviewerEmail: string
-            nonce: string
-        }>()
+    app.post('/api/verify-nonce', zValidator('json', AuthorizeRequestSchema), async (c) => {
+        const { reviewerDid, reviewerEmail, nonce } = await c.req.valid('json')
 
         if (!reviewerDid || !reviewerEmail || !nonce) {
             return c.json({ message: 'Missing fields' }, 400)
@@ -31,13 +30,14 @@ export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
         const store = new Store(new CloudflareUcanStore(c.env.UCAN_STORE_KV))
 
         const workerSigner = await EdDSASigner.import(c.env.WORKER_PRIVATE_KEY)
-        const authorDid = c.env.AUTHOR_DID
+        const authorDid = parse(c.env.AUTHOR_DID).did
+        const receivedReviewerDID = parse(reviewerDid).did
 
         // 5c) mint Worker -> Reviewer, rooted at Author (sub = authorDid).  
         // cmd is the *parent* '/chapter' so it covers list + read.  
         const delegation = await ChapterCap.delegate({
             iss: workerSigner,
-            aud: reviewerDid,
+            aud: receivedReviewerDID,
             sub: authorDid,
             pol: [['==', '.email', reviewerEmail]],
             exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,

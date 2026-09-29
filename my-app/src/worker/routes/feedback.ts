@@ -1,18 +1,20 @@
 import { Hono } from 'hono'
-import { getBearerToken, verifyDelegation } from '../auth/ucan'
-import type { Bindings } from '../index'
+import type { Bindings } from '../../index'
+import { ChapterReadCap } from '../chapter-cap'
+import { requireChapterCap } from '../middleware/require-chapter-cap'
 
 export function registerFeedbackRoutes(app: Hono<{ Bindings: Bindings }>) {
-  app.post('/api/feedback', async (c) => {
+  app.post('/api/feedback', requireChapterCap(ChapterReadCap), async (c) => {
     let token: string
-    try {
-      token = getBearerToken(c.req.header('Authorization'))
-    } catch (error) {
-      return c.text('Unauthorized', 401)
-    }
+    // OLD CODE Need to remove
+    // try {
+    //   token = getBearerToken(c.req.header('Authorization'))
+    // } catch (error) {
+    //   return c.text('Unauthorized', 401)
+    // }
 
     try {
-      const delegation = await verifyDelegation(token)
+      const delegation = await verifyDelegation(token) // OLD CODE - MUST REPLACE
       const feedback = await c.req.json()
       const { chapterSlug, sentenceId, feedbackText } = feedback
 

@@ -2,8 +2,7 @@ import { Hono } from 'hono'
 import { requireChapterCap } from '../middleware/require-chapter-cap.js'
 import { ChapterListCap, ChapterReadCap } from '../chapter-cap.js'
 import type { Invocation } from 'iso-ucan/invocation'
-// import type { Env } from '../env.js'  
-import { Bindings } from '../index.js'
+import { Bindings } from '../../index.js'
 
 export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
     app.post(

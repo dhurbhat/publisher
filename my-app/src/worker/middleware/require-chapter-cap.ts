@@ -4,11 +4,20 @@ import { Store } from 'iso-ucan/store'
 import { Resolver } from 'iso-signatures/verifiers/resolver.js'  
 import * as EdDSA from 'iso-signatures/verifiers/eddsa.js'  
 import { base64 } from 'iso-base/rfc4648'  
-import { didParse } from 'iso-did'  
+import { parse as didParse } from 'iso-did'  
 import { CloudflareUcanStore } from '../cloudflare-ucan-store.js'  
-import type { Env } from '../env.js'  
 import type { Capability } from 'iso-ucan/capability'  
-  
+import { Bindings } from '../../index.js'
+
+export interface ChapterVars {
+    Variables: {
+        invocation: Invocation,
+        chapterArgs: {
+            email: string,
+            slug: string,
+        }
+    }
+}
 const verifierResolver = new Resolver({ ...EdDSA.verifier })  
   
 /**  
@@ -18,7 +27,7 @@ const verifierResolver = new Resolver({ ...EdDSA.verifier })
  * issuer is the pinned AUTHOR_DID.  
  */  
 export function requireChapterCap(cap: Capability<any, string>) {  
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {  
+  return async (c: Context<{ Bindings: Bindings} & ChapterVars>, next: Next) => {  
     let body: { invocation: string }  
     try {  
       body = await c.req.json()  
@@ -52,7 +61,6 @@ export function requireChapterCap(cap: Capability<any, string>) {
       if (result.issues) {  
         return c.json({ error: 'invalid args', issues: result.issues }, 400)  
       }  
-  
       c.set('invocation', invocation)  
       c.set('chapterArgs', result.value)  
     } catch (error) {  
