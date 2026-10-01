@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { requireChapterCap } from '../middleware/require-chapter-cap.js'
-import { ChapterListCap, ChapterReadCap } from '../chapter-cap.js'
+import { ChapterListCap, ChapterReadCap } from '../../shared/chapter-cap.js'
 import type { Invocation } from 'iso-ucan/invocation'
 import { Bindings } from '../../index.js'
 

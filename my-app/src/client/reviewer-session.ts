@@ -1,7 +1,7 @@
 import { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
 import { Delegation } from 'iso-ucan/delegation'
 import { ucanStore, rawIdb } from './ucan-browser-store.js'
-import { AuthorizeRequest, AuthorizeResponseSchema } from '../schemas.js'
+import { AuthorizeRequest, AuthorizeResponseSchema } from '../shared/schemas.js'
 
 const SIGNER_KEY = 'reviewer-signer'
 const AUTHOR_DID_KEY = 'author-did'
@@ -15,6 +15,10 @@ export async function getOrCreateSigner(): Promise<EdDSASigner> {
   const signer = await EdDSASigner.generate()
   await rawIdb.set(SIGNER_KEY, signer.export())
   return signer
+}
+
+export async function getExistingSigner(): Promise<EdDSASigner> {
+  return await EdDSASigner.import(await rawIdb.get(SIGNER_KEY) as string)
 }
 
 export async function hasDelegation(): Promise<boolean> {
@@ -37,17 +41,23 @@ export async function verifyNonce(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+  console.log('[session] verify-nonce status =', res.status)
   if (!res.ok) {
     const err = await res.json() as { message: string }
     throw new Error(err.message || 'Verification failed')
   }
-      const rawData = await res.json()
+  const rawData = await res.json()
 
-    // Validate response payload structure using Zod
-    const { delegationToken, workerDID, authorDID } = AuthorizeResponseSchema.parse(rawData)
+  // Validate response payload structure using Zod
+  const { delegationToken, authorWorkerDelegation, workerDID, authorDID } = AuthorizeResponseSchema.parse(rawData)
 
-  const delegation = await Delegation.fromString(delegationToken)
-  await ucanStore.add([delegation]) // Worker->Reviewer, persisted into IndexedDB  
+  const wrDelegation = await Delegation.fromString(delegationToken)
+  const awDelegation = await Delegation.fromString(authorWorkerDelegation)
+  await ucanStore.add([awDelegation, wrDelegation]) // Worker->Reviewer, persisted into IndexedDB
+  console.log(`[session] aw: ${awDelegation} wr: ${wrDelegation}`)
+
+  await rawIdb.set('wr-delegation', wrDelegation)
+  await rawIdb.set('aw-delegation', awDelegation)
 
   await rawIdb.set(AUTHOR_DID_KEY, authorDID)
   await rawIdb.set(WORKER_DID_KEY, workerDID)

@@ -1,6 +1,5 @@
 // worker/cloudflare-ucan-store.ts  
-import type { KVNamespace } from '@cloudflare/workers-types'  
-  
+ 
 /**  
  * iso-kv doesn't re-export its Driver types (index.js uses them only via  
  * JSDoc), so we declare the async contract locally — verbatim from  

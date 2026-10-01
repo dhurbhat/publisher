@@ -5,6 +5,20 @@ import { Store } from 'iso-ucan/store'
 import { ChapterCap } from './src/worker/chapter-cap'
 import process from 'node:process'
 
+async function uploadKv(key: string, value: string, expiration?: number) {  
+  const { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: apiToken, UCAN_STORE_KV_ID: nsId } = process.env  
+  if (!accountId || !apiToken || !nsId) return false  
+  const res = await fetch(  
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces/${nsId}/values/${encodeURIComponent(key)}`,  
+    {  
+      method: 'PUT',  
+      headers: { Authorization: `Bearer ${apiToken}` },  
+      body: value,                    // value is the body, not JSON  
+    }  
+  )  
+  return res.ok  
+}
+
 async function uploadSecret(secretName: string, secretValue: string): Promise<boolean> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
   const apiToken = process.env.CLOUDFLARE_API_TOKEN
@@ -76,6 +90,11 @@ async function generateSeedAndDelegate() {
     exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 365),
     store: store
   })
+  const cid = delegation.cid.toString()
+  const token = delegation.toString()
+  await uploadKv(`ucan:${cid}`, token)
+  await uploadKv(`ucan:${authorSigner.did} ${workerSigner.did} ${cid}`, cid)
+  // TODO: set it locally thru' wrangler for local development
 
   // 5. Save secrets -- try API route, else request user to use command line wrangler.
   if (!await uploadSecret('WORKER_PRIVATE_KEY', workerSeedString)) {

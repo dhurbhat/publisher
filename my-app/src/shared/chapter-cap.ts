@@ -24,7 +24,7 @@ export const ChapterReadCap = Capability.from({
 export const ChapterFeedbackCap = Capability.from({
     schema: z.object({
         email: z.string(),
-        sentenceId: z.string(),
+        sentenceId: z.number(),
         slug: z.string(),
         feedback: z.string(),
     }),

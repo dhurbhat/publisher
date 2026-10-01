@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const AuthorizeResponseSchema = z.object({
   delegationToken: z.string(),
+  authorWorkerDelegation: z.string(),
   // Force Zod to validate the prefix and cast the resulting type safely
   workerDID: z.string().startsWith('did:') as z.ZodType<`did:${string}:${string}`>,
   authorDID: z.string().startsWith('did:') as z.ZodType<`did:${string}:${string}`>
