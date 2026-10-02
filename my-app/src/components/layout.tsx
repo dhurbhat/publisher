@@ -61,6 +61,8 @@ export const WorkspaceGrid: FC = () => (
       </div>  
       <h4 class="sidebar-heading">Comments</h4>  
       <div id="comment-stream" class="comment-stream">  
+        <div id="comment-list"></div>
+        <div id="comment-composer"></div>
         Click on any line inside the text canvas to view or drop inline notes  
       </div>  
     </aside>  

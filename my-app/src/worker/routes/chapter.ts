@@ -1,8 +1,13 @@
 import { Hono } from 'hono'
 import { requireChapterCap } from '../middleware/require-chapter-cap.js'
 import { ChapterListCap, ChapterReadCap } from '../../shared/chapter-cap.js'
-import type { Invocation } from 'iso-ucan/invocation'
 import { Bindings } from '../../index.js'
+
+export interface CommentRow {
+    sentence_id: number,
+    feedback: string,
+    created_at: string
+}
 
 export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
     app.post(
@@ -20,7 +25,7 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
         requireChapterCap(ChapterReadCap),
         async (c) => {
             const slug = c.req.param('slug')
-            const args = c.get('chapterArgs') as { email: string; slug: string }
+            const args = c.get('chapterArgs') as { email: string; slug: string, reviewerDid: string }
 
             if (args.slug !== slug) {
                 return c.json({ error: 'chapter slug mismatch' }, 403)
@@ -30,8 +35,12 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
             if (text === null) {
                 return c.json({ error: 'chapter not found' }, 404)
             }
+            const resultSet = await c.env.DB.prepare(
+                `SELECT sentence_id, feedback, created_at FROM feedback WHERE chapter_slug = ? AND reader_did = ? ORDER BY sentence_id`
+            ).bind(args.slug, args.reviewerDid).all<CommentRow>()
+            console.log(`[chapter] comments: ${resultSet}`)
 
-            return c.json({ slug, text })
+            return c.json({ slug, text, comments: resultSet.results })
         }
     )
 }

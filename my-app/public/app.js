@@ -14533,7 +14533,8 @@ var ChapterListCap = Capability.from({
 var ChapterReadCap = Capability.from({
   schema: external_exports.object({
     email: external_exports.string(),
-    slug: external_exports.string()
+    slug: external_exports.string(),
+    reviewerDid: external_exports.string().startsWith("did:")
   }),
   cmd: "/chapter/read"
 });
@@ -14569,6 +14570,15 @@ var AuthorizeRequestSchema = external_exports.object({
   reviewerEmail: external_exports.email(),
   nonce: external_exports.string().length(6),
   reviewerDid: external_exports.string().startsWith("did:")
+});
+var CommentsResponseSchema = external_exports.object({
+  slug: external_exports.string(),
+  text: external_exports.string(),
+  comments: external_exports.array(external_exports.object({
+    sentence_id: external_exports.number(),
+    feedback: external_exports.string(),
+    created_at: external_exports.string()
+  }))
 });
 
 // src/client/reviewer-session.ts
@@ -14637,6 +14647,7 @@ import * as EdDSA from "iso-signatures/verifiers/eddsa.js";
 var verifierResolver = new Resolver({ ...EdDSA.verifier });
 var selectedSentenceId = null;
 var activeChapterSlug = null;
+var currComments = [];
 async function postInvocation(url2, invocationBytes) {
   const res = await fetch(url2, {
     method: "POST",
@@ -14666,19 +14677,20 @@ async function loadChapters(signer, authorDid, email3) {
 }
 async function loadChapter(signer, authorDid, email3, slug) {
   activeChapterSlug = slug;
+  const reviewerDid = signer.did;
   const invocation = await ChapterReadCap.invoke({
     iss: signer,
     sub: parse3(authorDid).did,
-    args: { email: email3, slug },
+    args: { email: email3, slug, reviewerDid },
     store: ucanStore,
     exp: Math.floor(Date.now() / 1e3) + 300,
     verifierResolver
   });
-  const { text } = await postInvocation(
+  const { text, comments } = await postInvocation(
     `/api/chapters/${slug}`,
     invocation.bytes
   );
-  return text;
+  return { text, comments };
 }
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("[app] DOMContentLoaded fired");
@@ -14706,13 +14718,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     const chapters = await loadChapters(signer, authorDid, email3);
     renderChapterList(chapters, (slug) => {
-      loadChapter(signer, authorDid, email3, slug).then(renderChapterText).catch((err) => showError(err.message));
+      loadChapter(signer, authorDid, email3, slug).then(({ text, comments }) => renderChapterText(text, comments)).catch((err) => showError(err.message));
     });
     if (chapters.length > 0) {
       const canvas = document.getElementById("text-canvas");
       canvas.innerHTML = '<p style="color: #6b7280; text-align: center;">Securely loading chapter...</p>';
-      const content = await loadChapter(signer, authorDid, email3, chapters[0].name);
-      renderChapterText(content);
+      const { text, comments } = await loadChapter(signer, authorDid, email3, chapters[0].name);
+      currComments = comments;
+      console.log("[app] comments received=", comments);
+      renderChapterText(text, comments);
     }
   } catch (err) {
     console.error("Hydration error:", err);
@@ -14752,21 +14766,57 @@ function showWorkspaceView(email3, did) {
 }
 function renderChapterList(chapters, onSelect) {
   const ul = document.getElementById("dynamic-chapter-list");
+  const sorted = [...chapters].sort((a, b) => a.name.localeCompare(b.name, void 0, { numeric: true, sensitivity: "base" }));
   ul.innerHTML = "";
   for (const c of chapters) {
     const li = document.createElement("li");
-    li.textContent = c.name;
+    const a = document.createElement("a");
+    a.href = "#";
+    a.textContent = c.name.replace("chapter-", "").replace(/-/g, " ").replace(/\b\w/g, (c2) => c2.toUpperCase());
     li.dataset.slug = c.name;
-    li.addEventListener("click", () => onSelect(c.name));
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      onSelect(c.name);
+    });
+    li.appendChild(a);
     ul.appendChild(li);
   }
 }
-function renderChapterText(chapterText) {
+function renderChapterText(chapterText, comments) {
   const canvas = document.getElementById("text-canvas");
   console.log(`[app] chapter text: ${chapterText.slice(0, 25)}...`);
   canvas.innerHTML = `<div id="manuscript-viewport" style="line-height: 1.85; font-size: 1.15rem;">${parseSentencesIntoSpans(chapterText)}</div>`;
   buildSubsectionNavigation();
+  for (const c of comments) {
+    document.querySelector(`.novel-sentence[data-id="${c.sentence_id}"]`)?.classList.add("has-comment");
+  }
   resetFeedbackUI();
+  renderComments(comments);
+}
+function renderComments(comments) {
+  const stream = document.getElementById("comment-list");
+  console.log("[layout] comments=", comments, " len=", comments.length);
+  if (!comments.length) {
+    stream.innerHTML = '<div class="comment-empty">Click on any line\u2026</div>';
+    return;
+  }
+  stream.innerHTML = "";
+  for (const c of comments) {
+    const item = document.createElement("div");
+    item.className = "comment-card";
+    item.innerHTML = `<span class="comment-ref">\xB6 ${c.sentence_id}</span>  
+                          <p>${c.feedback}</p>`;
+    item.addEventListener("click", () => {
+      const span = document.querySelector(
+        `.novel-sentence[data-id="${c.sentence_id}"]`
+      );
+      if (!span) return;
+      span.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.querySelectorAll(".novel-sentence").forEach((el) => el.classList.remove("active-highlight"));
+      span.classList.add("active-highlight");
+    });
+    stream.appendChild(item);
+  }
 }
 function showError(msg) {
   const statusEl = document.getElementById("status-message");
@@ -14823,17 +14873,28 @@ function selectSentence(element, id) {
   document.querySelectorAll(".novel-sentence").forEach((el) => el.classList.remove("active-highlight"));
   element.classList.add("active-highlight");
   selectedSentenceId = id;
-  const panel = document.getElementById("comment-stream");
+  const panel = document.getElementById("comment-composer");
   panel.innerHTML = `
-    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}</h4>
+    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<a href="#" id="close-composer"></a></h4>
     <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here..."></textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
-  panel.querySelector("button").addEventListener("click", () => submitLineNote(selectedSentenceId));
+  panel.querySelector("button:last-of-type").addEventListener("click", () => submitLineNote(selectedSentenceId));
+  document.getElementById("close-composer").addEventListener("click", (e) => {
+    e.preventDefault();
+    resetFeedbackUI();
+  });
 }
 function resetFeedbackUI() {
   selectedSentenceId = null;
-  document.getElementById("comment-stream").innerHTML = '<div style="color: #9ca3af; font-size: 0.9rem;">Click on any line inside the text canvas to view or drop inline notes</div>';
+  document.getElementById("comment-composer").innerHTML = "";
+}
+function markCommentedSentences(comments) {
+  for (const c of comments) {
+    document.querySelector(
+      `.novel-sentence[data-id="${c.sentence_id}"]`
+    )?.classList.add("has-comment");
+  }
 }
 async function submitLineNote(sId) {
   const commentText = document.getElementById("feedback-note").value;
@@ -14855,6 +14916,14 @@ async function submitLineNote(sId) {
     });
     const res = await postInvocation(`/api/feedback`, invocation.bytes);
     alert(`Note submitted ${res.message}`);
+    currComments.push({
+      sentence_id: sId,
+      feedback: commentText,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    currComments.sort((a, b) => a.sentence_id - b.sentence_id);
+    renderComments(currComments);
+    markCommentedSentences(currComments);
     resetFeedbackUI();
   } catch (error51) {
     console.error("[feedback] submit failed:", error51);

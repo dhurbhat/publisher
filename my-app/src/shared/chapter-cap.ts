@@ -16,7 +16,8 @@ export const ChapterListCap = Capability.from({
 export const ChapterReadCap = Capability.from({  
   schema: z.object({  
     email: z.string(),  
-    slug: z.string(),  
+    slug: z.string(),
+    reviewerDid: z.string().startsWith('did:')
   }),  
   cmd: '/chapter/read',  
 })

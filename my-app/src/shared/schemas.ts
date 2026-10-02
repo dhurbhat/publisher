@@ -16,3 +16,13 @@ export const AuthorizeRequestSchema = z.object({
 
 export type AuthorizeRequest = z.infer<typeof AuthorizeRequestSchema>
 export type AuthorizeResponse = z.infer<typeof AuthorizeResponseSchema>
+
+const CommentsResponseSchema = z.object({  
+    slug: z.string(),  
+    text: z.string(),  
+    comments: z.array(z.object({  
+        sentence_id: z.number(),  
+        feedback: z.string(),  
+        created_at: z.string(),  
+    })),  
+})

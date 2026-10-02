@@ -345,7 +345,16 @@ button[type="submit"] {
     font-size: 0.9rem;
 }
 
-.comment-stream {
-    color: #9ca3af;
-    font-size: 0.9rem;
+.comment-stream { overflow-y: auto; max-height: 60vh; display: flex; flex-direction: column; gap: 8px; }  
+.comment-card { padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; }  
+.comment-card:hover { border-color: #9ca3af; }  
+.comment-ref { font-size: 0.75rem; color: #9ca3af; }
+
+.novel-sentence.has-comment {  
+    background: #c7e0fe;            /* amber tint */  
+    cursor: pointer;  
+}  
+.novel-sentence.has-comment::after {  
+    content: ' 💬';  
+    font-size: 0.7em;  
 }

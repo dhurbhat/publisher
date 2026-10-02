@@ -1,5 +1,5 @@
 import { ChapterFeedbackCap, ChapterListCap, ChapterReadCap } from '../shared/chapter-cap.js'
-import { rawIdb, ucanStore } from './ucan-browser-store.js'
+import { ucanStore } from './ucan-browser-store.js'
 import {
     getOrCreateSigner,
     hasDelegation,
@@ -13,11 +13,12 @@ import { parse } from 'iso-did'
 import { Resolver } from 'iso-signatures/verifiers/resolver.js'
 import * as EdDSA from 'iso-signatures/verifiers/eddsa.js'
 import type { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
-import { Delegation } from 'iso-ucan/delegation'
+import { CommentRow } from '../worker/routes/chapter.js'
 
 const verifierResolver = new Resolver({ ...EdDSA.verifier })
-let selectedSentenceId: number | null = null;
-let activeChapterSlug: string | null = null;
+let selectedSentenceId: number | null = null
+let activeChapterSlug: string | null = null
+let currComments: CommentRow[] = []
 
 async function postInvocation<T = unknown>(url: string, invocationBytes: Uint8Array): Promise<T> {
     const res = await fetch(url, {
@@ -33,10 +34,6 @@ async function postInvocation<T = unknown>(url: string, invocationBytes: Uint8Ar
 }
 
 async function loadChapters(signer: EdDSASigner, authorDid: string, email: string) {
-    // const [leaf, root] = await Promise.all([
-    //     Delegation.fromString(await rawIdb.get('wr-delegation') as string),
-    //     Delegation.fromString(await rawIdb.get('aw-delegation') as string),
-    // ])
     const invocation = await ChapterListCap.invoke({
         iss: signer,
         sub: parse(authorDid).did,
@@ -53,18 +50,19 @@ async function loadChapters(signer: EdDSASigner, authorDid: string, email: strin
 
 async function loadChapter(signer: EdDSASigner, authorDid: string, email: string, slug: string) {
     activeChapterSlug = slug
+    const reviewerDid = signer.did
     const invocation = await ChapterReadCap.invoke({
         iss: signer,
         sub: parse(authorDid).did,
-        args: { email, slug },
+        args: { email, slug, reviewerDid },
         store: ucanStore,
         exp: Math.floor(Date.now() / 1000) + 300,
         verifierResolver,
     })
-    const { text } = await postInvocation<{ text: string }>(
+    const { text, comments } = await postInvocation<{ text: string, comments: CommentRow[] }>(
         `/api/chapters/${slug}`, invocation.bytes
     )
-    return text
+    return { text, comments }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -97,15 +95,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const chapters = await loadChapters(signer, authorDid, email)
         renderChapterList(chapters, (slug) => {
             loadChapter(signer, authorDid, email, slug)
-                .then(renderChapterText)
+                .then(({ text, comments }) => renderChapterText(text, comments))
                 .catch((err) => showError(err.message))
         })
 
         if (chapters.length > 0) {
             const canvas = document.getElementById('text-canvas')!
             canvas.innerHTML = '<p style="color: #6b7280; text-align: center;">Securely loading chapter...</p>';
-            const content = await loadChapter(signer, authorDid, email, chapters[0].name)
-            renderChapterText(content)
+            const { text, comments } = await loadChapter(signer, authorDid, email, chapters[0].name)
+            currComments = comments
+            console.log('[app] comments received=', comments)
+            renderChapterText(text, comments)
         }
     } catch (err) {
         console.error('Hydration error:', err)
@@ -151,23 +151,60 @@ function showWorkspaceView(email: string, did: string) {
 
 function renderChapterList(chapters: { name: string }[], onSelect: (slug: string) => void) {
     const ul = document.getElementById('dynamic-chapter-list')!
+    const sorted = [...chapters].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
     ul.innerHTML = ''
-    for (const c of chapters) {
+    for (const c of sorted) {
         const li = document.createElement('li')
-        li.textContent = c.name
+        const a = document.createElement('a')
+        a.href = '#'
+        a.textContent = c.name.replace('chapter-', '')
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase())
         li.dataset.slug = c.name
-        li.addEventListener('click', () => onSelect(c.name))
+        a.addEventListener('click', (e) => { e.preventDefault(); onSelect(c.name) })
+        li.appendChild(a)
         ul.appendChild(li)
     }
 }
 
-function renderChapterText(chapterText: string) {
+function renderChapterText(chapterText: string, comments: CommentRow[]) {
     const canvas = document.getElementById('text-canvas')!
     console.log(`[app] chapter text: ${chapterText.slice(0, 25)}...`)
     canvas.innerHTML = `<div id="manuscript-viewport" style="line-height: 1.85; font-size: 1.15rem;">${parseSentencesIntoSpans(chapterText)}</div>`;
     buildSubsectionNavigation();
+    markCommentedSentences(comments)
     resetFeedbackUI();
+    renderComments(comments)
     // document.getElementById('text-canvas')!.innerHTML = chapterText
+}
+
+function renderComments(comments: CommentRow[]) {
+    const stream = document.getElementById('comment-list')!
+    console.log('[layout] comments=', comments, ' len=', comments.length)
+    if (!comments.length) {
+        stream.innerHTML = '<div class="comment-empty">Click on any line…</div>'
+        return
+    }
+    stream.innerHTML = ''
+    for (const c of comments) {
+        const item = document.createElement('div')
+        item.className = 'comment-card'
+        item.innerHTML = `<span class="comment-ref">¶ ${c.sentence_id}</span>  
+                          <p>${c.feedback}</p>`
+        item.addEventListener('click', () => {
+            const span = document.querySelector<HTMLElement>(
+                `.novel-sentence[data-id="${c.sentence_id}"]`)
+            if (!span) return
+            span.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            document.querySelectorAll('.novel-sentence')
+                .forEach(el => el.classList.remove('active-highlight'))
+            span.classList.add('active-highlight')
+            console.log('[app] span active-highlight added')
+            // selectSentence(span, c.sentence_id)   // reuse existing highlight + panel  
+        })
+        stream.appendChild(item)
+    }
 }
 
 function showError(msg: string) {
@@ -236,19 +273,31 @@ function selectSentence(element: HTMLElement, id: number) {
     element.classList.add('active-highlight');
     selectedSentenceId = id;
 
-    const panel = document.getElementById('comment-stream')!
+    const panel = document.getElementById('comment-composer')!
     panel.innerHTML = `
-    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}</h4>
+    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<a href="#" id="close-composer"></a></h4>
     <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here..."></textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
-    panel.querySelector('button')!.addEventListener('click', () => submitLineNote(selectedSentenceId!))
+    panel.querySelector('button:last-of-type')!.addEventListener('click', () => submitLineNote(selectedSentenceId!))
+    document.getElementById('close-composer')!.addEventListener('click', (e) => {
+        e.preventDefault()
+        resetFeedbackUI()
+    })
 }
 
 function resetFeedbackUI() {
     selectedSentenceId = null;
-    document.getElementById('comment-stream')!.innerHTML = '<div style="color: #9ca3af; font-size: 0.9rem;">Click on any line inside the text canvas to view or drop inline notes</div>';
+    document.getElementById('comment-composer')!.innerHTML = ''
+    // document.getElementById('comment-stream')!.innerHTML = '<div style="color: #9ca3af; font-size: 0.9rem;">Click on any line inside the text canvas to view or drop inline notes</div>';
 };
+function markCommentedSentences(comments: CommentRow[]) {  
+    for (const c of comments) {  
+        document.querySelector<HTMLElement>(  
+            `.novel-sentence[data-id="${c.sentence_id}"]`  
+        )?.classList.add('has-comment')  
+    }  
+}
 
 async function submitLineNote(sId: number) {
     const commentText = (document.getElementById('feedback-note')! as HTMLTextAreaElement).value
@@ -271,7 +320,15 @@ async function submitLineNote(sId: number) {
         })
         const res = await postInvocation<{ message: string }>(`/api/feedback`, invocation.bytes)
         alert(`Note submitted ${res.message}`);
-        resetFeedbackUI();
+        currComments.push({
+            sentence_id: sId,
+            feedback: commentText,
+            created_at: new Date().toISOString(),
+        })
+        currComments.sort((a, b) => a.sentence_id - b.sentence_id)  // match server ORDER BY  
+        renderComments(currComments)
+        markCommentedSentences(currComments)  // if you added badges  
+        resetFeedbackUI()
     } catch (error) {
         console.error('[feedback] submit failed:', error)
         alert(`Failed to save feedback: ${error instanceof Error ? error.message : String(error)}`)
