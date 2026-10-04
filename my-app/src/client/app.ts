@@ -66,15 +66,15 @@ async function loadChapter(signer: EdDSASigner, authorDid: string, email: string
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('[app] DOMContentLoaded fired')
+    // console.log('[app] DOMContentLoaded fired')
     try {
         const signer = await getOrCreateSigner()
-        console.log('[app] signer ready, did =', signer.did)
+        // console.log('[app] signer ready, did =', signer.did)
         const hasDel = await hasDelegation()
-        console.log('[app] hasDelegation =', hasDel)
+        // console.log('[app] hasDelegation =', hasDel)
         if (!hasDel) {
             showAuthView(async (email: string, nonce: string) => {
-                console.log('[app] submitting nonce for', email)
+                // console.log('[app] submitting nonce for', email)
                 await verifyNonce(signer.did, email, nonce)
                 window.location.reload()
             })
@@ -83,13 +83,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const authorDid = await getAuthorDid()
         const email = await getReviewerEmail()
-        console.log('[app] authorDid =', authorDid, 'email =', email)
+        // console.log('[app] authorDid =', authorDid, 'email =', email)
 
         showWorkspaceView(email, signer.did)
         document.getElementById('text-canvas')!.addEventListener('click', (e) => {
             const span = (e.target as HTMLElement).closest<HTMLElement>('.novel-sentence')
             if (span)
                 selectSentence(span, Number(span.dataset.id))
+        })
+        document.getElementById('toggle-revisions')!.addEventListener('click', (e) => {
+            const hiding = document.body.classList.toggle('hide-revisions')
+                ; (e.currentTarget as HTMLElement).textContent = hiding ? 'Show changes' : 'Hide changes'
         })
 
         const chapters = await loadChapters(signer, authorDid, email)
@@ -104,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             canvas.innerHTML = '<p style="color: #6b7280; text-align: center;">Securely loading chapter...</p>';
             const { text, comments } = await loadChapter(signer, authorDid, email, chapters[0].name)
             currComments = comments
-            console.log('[app] comments received=', comments)
+            // console.log('[app] comments received=', comments)
             renderChapterText(text, comments)
         }
     } catch (err) {
@@ -170,18 +174,20 @@ function renderChapterList(chapters: { name: string }[], onSelect: (slug: string
 
 function renderChapterText(chapterText: string, comments: CommentRow[]) {
     const canvas = document.getElementById('text-canvas')!
-    console.log(`[app] chapter text: ${chapterText.slice(0, 25)}...`)
+    // console.log(`[app] chapter text: ${chapterText.slice(0, 25)}...`)
     canvas.innerHTML = `<div id="manuscript-viewport" style="line-height: 1.85; font-size: 1.15rem;">${parseSentencesIntoSpans(chapterText)}</div>`;
     buildSubsectionNavigation();
     markCommentedSentences(comments)
     resetFeedbackUI();
     renderComments(comments)
-    // document.getElementById('text-canvas')!.innerHTML = chapterText
+    updateRevisionUI()
 }
 
 function renderComments(comments: CommentRow[]) {
+    const hasRevisions = !!document.querySelector('.rev-del, .rev-ins')
+    const hasComments = comments.length > 0
     const stream = document.getElementById('comment-list')!
-    console.log('[layout] comments=', comments, ' len=', comments.length)
+    stream.insertAdjacentHTML('beforebegin', hasRevisions && hasComments ? '<div class="comment-caution">⚠ This draft has revisions — some notes may point at shifted lines.</div>' : '')
     if (!comments.length) {
         stream.innerHTML = '<div class="comment-empty">Click on any line…</div>'
         return
@@ -195,12 +201,20 @@ function renderComments(comments: CommentRow[]) {
         item.addEventListener('click', () => {
             const span = document.querySelector<HTMLElement>(
                 `.novel-sentence[data-id="${c.sentence_id}"]`)
-            if (!span) return
-            span.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            const isOrphan = span === null
+            const isDrifted = Boolean(span && c.sentence_text && span.textContent!.trim() !== c.sentence_text)
+            item.classList.toggle('comment-stale', isOrphan || isDrifted)
+
+            if (isOrphan || isDrifted) {
+                item.innerHTML = `<span class="comment-ref">¶ ${c.sentence_id} · stale</span>  
+                      <p>${c.feedback}</p>  
+                      ${c.sentence_text ? `<small class="stale-ctx">was: "${esc(c.sentence_text.slice(0, 80))}…"</small>` : ''}`
+            }
+            span!.scrollIntoView({ behavior: 'smooth', block: 'center' })
             document.querySelectorAll('.novel-sentence')
                 .forEach(el => el.classList.remove('active-highlight'))
-            span.classList.add('active-highlight')
-            console.log('[app] span active-highlight added')
+            span!.classList.add('active-highlight')
+            // console.log('[app] span active-highlight added')
             // selectSentence(span, c.sentence_id)   // reuse existing highlight + panel  
         })
         stream.appendChild(item)
@@ -215,32 +229,68 @@ function showError(msg: string) {
     }
 }
 
+/* handle CriticMarkdown */
+const CRITIC = /\{~~.*?~~\}|\{--.*?--\}|\{\+\+.*?\+\+\}|\{>>.*?<<\}/gs
+// italic runs: *text* — must start with non-space, no newlines inside * per markdown…  
+// but Scrivener's newline-italic means the CONTENT may contain sentences, not \n  
+const MD_EM = /\*\S[^*]*\*/g
+const INLINE = new RegExp(`${CRITIC.source}|${MD_EM.source}`, 'gs')
+
+const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const renderCriticMarkup = (s: string) => s
+    .replace(/\{~~(.*?)~>(.*?)~~\}/gs, (_, a, b) =>
+        `<del class="rev-del">${esc(a)}</del><ins class="rev-ins">${esc(b)}</ins>`)
+    .replace(/\{~~(.*?)~~\}/gs, (_, a) => `<del class="rev-del">${esc(a)}</del>`)
+    .replace(/\{--(.*?)--\}/gs, (_, a) => `<del class="rev-del">${esc(a)}</del>`)
+    .replace(/\{\+\+(.*?)\+\+\}/gs, (_, a) => `<ins class="rev-ins">${esc(a)}</ins>`)
+    .replace(/\{>>(.*?)<<\}/gs, (_, a) =>
+        `<span class="rev-comment" title="${esc(a)}">※</span>`)
+
 function parseSentencesIntoSpans(text: string) {
     const paragraphs = text.split(/\n+/);
     let globalIndexCounter = 0;
     const segmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
+
+    const emitSpan = (content: string) => {
+        if (!content.trim()) return '';
+        const id = globalIndexCounter++;
+        return `<span class="novel-sentence" data-id="${id}">${content}</span>`;
+    };
+    const renderInline = (m: string) =>
+        m.startsWith('*') ? `<em>${esc(m.slice(1, -1))}</em>` : renderCriticMarkup(m)
 
     return paragraphs.map(paragraphContent => {
         const trimmed = paragraphContent.trim();
         if (!trimmed) return '';
 
         if (trimmed.startsWith('# ')) {
-            return `<h1 style="margin: 2rem 0 1rem 0; font-size: 1.8rem; font-weight: 700; color: #111827;">${trimmed.substring(2)}</h1>`;
+            return `<h1 style="margin: 2rem 0 1rem 0; font-size: 1.8rem; font-weight: 700; color: #111827;">${esc(trimmed.substring(2))}</h1>`;
         }
         if (trimmed.startsWith('## ')) {
-            return `<h2 class="manuscript-section" style="margin: 1.5rem 0 0.75rem 0; font-size: 1.4rem; font-weight: 600; color: #374151;">${trimmed.substring(3)}</h2>`;
+            return `<h2 class="manuscript-section" style="margin: 1.5rem 0 0.75rem 0; font-size: 1.4rem; font-weight: 600; color: #374151;">${esc(trimmed.substring(3))}</h2>`;
         }
         if (trimmed.startsWith('### ')) {
-            return `<h3 class="manuscript-subsection" style="margin: 1.25rem 0 0.5rem 0; font-size: 1.2rem; font-weight: 600; color: #4b5563; font-style: italic;">${trimmed.substring(4)}</h3>`;
+            return `<h3 class="manuscript-subsection" style="margin: 1.25rem 0 0.5rem 0; font-size: 1.2rem; font-weight: 600; color: #4b5563; font-style: italic;">${esc(trimmed.substring(4))}</h3>`;
         }
 
-        const segments = segmenter.segment(trimmed);
-        const wrappedSpans = Array.from(segments).map(segmentObj => {
-            const sentenceText = segmentObj.segment;
-            if (!sentenceText.trim()) return '';
+        // Split paragraph into alternating [plain, marker, plain, marker, ...]  
+        const pieces = trimmed.split(INLINE);          // plain-text gaps  
+        const markers = trimmed.match(INLINE) ?? [];   // CriticMarkup blocks in order  
 
-            const currentId = globalIndexCounter++;
-            return `<span class="novel-sentence" data-id="${currentId}">${sentenceText}</span>`;
+        const wrappedSpans = pieces.map((piece, i) => {
+            // 1. segment the plain-text gap into sentences  
+            const plainSpans = Array.from(segmenter.segment(piece))
+                .filter(seg => seg.segment.trim())
+                .map(seg => emitSpan(esc(seg.segment)))
+                .join('');
+            // 2. emit the marker that follows this gap, as one atomic span  
+            const markerSpan = markers[i]
+                ? emitSpan(renderInline(markers[i]))
+                : '';
+            return plainSpans + markerSpan;
         }).join('');
 
         return `<p style="margin-bottom: 1.5rem; text-indent: 1.5rem; text-align: justify; font-size: 1.15rem; line-height: 1.8;">${wrappedSpans}</p>`;
@@ -272,11 +322,13 @@ function selectSentence(element: HTMLElement, id: number) {
     document.querySelectorAll('.novel-sentence').forEach(el => el.classList.remove('active-highlight'));
     element.classList.add('active-highlight');
     selectedSentenceId = id;
+    const comment = currComments.find(c => c.sentence_id === id)
+    // console.log(`[app] selectSentence() comment: ${comment ? comment.feedback : 'null'}`)
 
     const panel = document.getElementById('comment-composer')!
     panel.innerHTML = `
-    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<a href="#" id="close-composer"></a></h4>
-    <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here..."></textarea>
+    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<span><small><a href="#" id="close-composer" style="text-decoration: none">&nbsp;&nbsp;Close</small></span></h4>
+    <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here...">${comment ? comment.feedback : ''}</textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
     panel.querySelector('button:last-of-type')!.addEventListener('click', () => submitLineNote(selectedSentenceId!))
@@ -291,12 +343,12 @@ function resetFeedbackUI() {
     document.getElementById('comment-composer')!.innerHTML = ''
     // document.getElementById('comment-stream')!.innerHTML = '<div style="color: #9ca3af; font-size: 0.9rem;">Click on any line inside the text canvas to view or drop inline notes</div>';
 };
-function markCommentedSentences(comments: CommentRow[]) {  
-    for (const c of comments) {  
-        document.querySelector<HTMLElement>(  
-            `.novel-sentence[data-id="${c.sentence_id}"]`  
-        )?.classList.add('has-comment')  
-    }  
+function markCommentedSentences(comments: CommentRow[]) {
+    for (const c of comments) {
+        document.querySelector<HTMLElement>(
+            `.novel-sentence[data-id="${c.sentence_id}"]`
+        )?.classList.add('has-comment')
+    }
 }
 
 async function submitLineNote(sId: number) {
@@ -310,10 +362,12 @@ async function submitLineNote(sId: number) {
         const signer = await getExistingSigner()
         const authorDid = await getAuthorDid()
         const email = await getReviewerEmail()
+        const spanText = document.querySelector<HTMLElement>(
+            `.novel-sentence[data-id="${sId}"]`)?.textContent?.trim() ?? ''
         const invocation = await ChapterFeedbackCap.invoke({
             iss: signer,
             sub: parse(authorDid).did,
-            args: { email: email, sentenceId: sId, slug: activeChapterSlug!, feedback: commentText },
+            args: { email: email, sentenceId: sId, slug: activeChapterSlug!, feedback: commentText, sentenceText: spanText.slice(0, 300) },
             store: ucanStore,
             exp: Math.floor(Date.now() / 1000) + 300,
             verifierResolver,
@@ -333,4 +387,11 @@ async function submitLineNote(sId: number) {
         console.error('[feedback] submit failed:', error)
         alert(`Failed to save feedback: ${error instanceof Error ? error.message : String(error)}`)
     }
+}
+
+// Show legend + toggle only when the chapter actually contains revisions  
+function updateRevisionUI() {
+    const hasRevisions = !!document.querySelector('.rev-del, .rev-ins, .rev-comment')
+    document.getElementById('rev-legend')?.classList.toggle('hidden', !hasRevisions)
+    document.getElementById('toggle-revisions')?.classList.toggle('hidden', !hasRevisions)
 }

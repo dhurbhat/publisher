@@ -28,6 +28,7 @@ export const ChapterFeedbackCap = Capability.from({
         sentenceId: z.number(),
         slug: z.string(),
         feedback: z.string(),
+        sentenceText: z.string()
     }),
     cmd: '/chapter/feedback'
 })

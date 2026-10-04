@@ -331,12 +331,16 @@ button[type="submit"] {
     margin-bottom: 0.5rem;
 }
 
-.subsection-list a {  
-    text-decoration: none;  
-    color: #4b5563;  
-    transition: color 0.15s;  
-}  
-.subsection-list a:hover { color: #111827; } 
+.subsection-list a {
+    text-decoration: none;
+    color: #4b5563;
+    transition: color 0.15s;
+}
+
+.subsection-list a:hover {
+    color: #111827;
+}
+
 .subsection-list {
     list-style: none;
     display: flex;
@@ -345,16 +349,152 @@ button[type="submit"] {
     font-size: 0.9rem;
 }
 
-.comment-stream { overflow-y: auto; max-height: 60vh; display: flex; flex-direction: column; gap: 8px; }  
-.comment-card { padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; }  
-.comment-card:hover { border-color: #9ca3af; }  
-.comment-ref { font-size: 0.75rem; color: #9ca3af; }
+.comment-stream {
+    overflow-y: auto;
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 
-.novel-sentence.has-comment {  
-    background: #c7e0fe;            /* amber tint */  
-    cursor: pointer;  
-}  
-.novel-sentence.has-comment::after {  
-    content: ' 💬';  
-    font-size: 0.7em;  
+.comment-card {
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.comment-card:hover {
+    border-color: #9ca3af;
+}
+
+.comment-ref {
+    font-size: 0.75rem;
+    color: #9ca3af;
+}
+
+.novel-sentence.has-comment {
+    background: #cadffa;
+    cursor: pointer;
+}
+
+.novel-sentence.has-comment::after {
+    content: ' 💬';
+    font-size: 0.7em;
+}
+
+/* --- CriticMarkup / Scrivener Revision Mode rendering --- */
+
+/* {--deleted--} — struck through, faded red (reuse --status-inactive) */
+.rev-del {
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: var(--status-inactive);
+    color: var(--status-inactive);
+    opacity: 0.6;
+}
+
+/* {++inserted++} — green wash (reuse --status-active) */
+.rev-ins {
+    background-color: rgba(16, 185, 129, 0.15);
+    /* --status-active @ 15% */
+    color: #047857;
+    /* darker emerald for legibility */
+    text-decoration: none;
+    border-bottom: 1px dashed var(--status-active);
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
+/* {~~old~>new~~} emits .rev-del + .rev-ins adjacently — snug the seam */
+.rev-del+.rev-ins {
+    margin-left: 1px;
+}
+
+/* {>>editorial comment<<} — amber chip (reuse --highlight-sentence family) */
+.rev-comment {
+    color: #d97706;
+    background: var(--highlight-sentence);
+    font-size: 0.85em;
+    padding: 0 3px;
+    border-radius: 3px;
+    cursor: help;
+}
+
+/* --- Revision legend + hide-changes toggle --- */
+.rev-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-color);
+}
+
+.rev-legend .swatch-del {
+    color: var(--status-inactive);
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.rev-legend .swatch-ins {
+    background: rgba(16, 185, 129, 0.15);
+    color: #047857;
+    border-bottom: 1px dashed var(--status-active);
+    padding: 0 3px;
+}
+
+.rev-legend .swatch-sub del {
+    color: var(--status-inactive);
+    opacity: 0.6;
+}
+
+.rev-legend .swatch-sub ins {
+    background: rgba(16, 185, 129, 0.15);
+    color: #047857;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--status-active);
+    margin-left: 1px;
+    padding: 0 2px;
+}
+
+/* Hide-changes mode = "accepted" reading */
+body.hide-revisions .rev-del {
+    display: none;
+}
+
+body.hide-revisions .rev-ins {
+    background: none;
+    color: inherit;
+    border-bottom: none;
+    padding: 0;
+}
+
+body.hide-revisions .rev-comment {
+    display: none;
+}
+
+.comment-caution {
+    font-size: .78rem;
+    color: #d97706;
+    background: #fef3c7;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.comment-caution::before { content: '⚠️'}
+
+.comment-card.comment-stale {
+    opacity: .6;
+    border-style: dashed;
+}
+
+.stale-ctx {
+    color: var(--text-muted);
+    font-style: italic;
 }

@@ -7,6 +7,7 @@ export interface CommentRow {
     sentence_id: number,
     feedback: string,
     created_at: string
+    sentence_text: string
 }
 
 export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {

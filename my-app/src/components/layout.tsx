@@ -14,7 +14,8 @@ export const HeadStyles: FC = () => (
 export const TopToolbar: FC = () => (  
   <header class="toolbar">  
     <button id="toggle-toc" class="btn-toc">☰ Chapters</button>  
-    <div class="novel-title">First Murder in 200 years</div>  
+    <div class="novel-title">First Murder in 200 Years</div>
+    <button id="toggle-revisions" class="btn-toc hidden">Hide changes</button>
     <div id="token-status-badge" class="badge-status badge-inactive">No Access Token</div>  
   </header>  
 )  
@@ -55,11 +56,17 @@ export const WorkspaceGrid: FC = () => (
       </article>  
     </main>  
     <aside class="right-sidebar">  
+      <div id="rev-legend" class="rev-legend hidden">
+        <strong>Revisions</strong>
+        <span class="swatch-del">deleted</span>
+        <span class="swatch-ins">inserted</span>
+        <span class="swatch-sub"><del>old</del><ins>new</ins></span>
+      </div>
       <div id="subsection-nav-container" class="subsection-container">  
         <h4 class="sidebar-heading">On This Page</h4>  
         <ul id="subsection-links" class="subsection-list" />  
       </div>  
-      <h4 class="sidebar-heading">Comments</h4>  
+      <h4 id="sidebar-heading" class="sidebar-heading">Comments</h4>  
       <div id="comment-stream" class="comment-stream">  
         <div id="comment-list"></div>
         <div id="comment-composer"></div>

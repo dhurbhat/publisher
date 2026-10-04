@@ -14543,7 +14543,8 @@ var ChapterFeedbackCap = Capability.from({
     email: external_exports.string(),
     sentenceId: external_exports.number(),
     slug: external_exports.string(),
-    feedback: external_exports.string()
+    feedback: external_exports.string(),
+    sentenceText: external_exports.string()
   }),
   cmd: "/chapter/feedback"
 });
@@ -14693,15 +14694,11 @@ async function loadChapter(signer, authorDid, email3, slug) {
   return { text, comments };
 }
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("[app] DOMContentLoaded fired");
   try {
     const signer = await getOrCreateSigner();
-    console.log("[app] signer ready, did =", signer.did);
     const hasDel = await hasDelegation();
-    console.log("[app] hasDelegation =", hasDel);
     if (!hasDel) {
       showAuthView(async (email4, nonce) => {
-        console.log("[app] submitting nonce for", email4);
         await verifyNonce(signer.did, email4, nonce);
         window.location.reload();
       });
@@ -14709,12 +14706,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     const authorDid = await getAuthorDid();
     const email3 = await getReviewerEmail();
-    console.log("[app] authorDid =", authorDid, "email =", email3);
     showWorkspaceView(email3, signer.did);
     document.getElementById("text-canvas").addEventListener("click", (e) => {
       const span = e.target.closest(".novel-sentence");
       if (span)
         selectSentence(span, Number(span.dataset.id));
+    });
+    document.getElementById("toggle-revisions").addEventListener("click", (e) => {
+      const hiding = document.body.classList.toggle("hide-revisions");
+      e.currentTarget.textContent = hiding ? "Show changes" : "Hide changes";
     });
     const chapters = await loadChapters(signer, authorDid, email3);
     renderChapterList(chapters, (slug) => {
@@ -14725,7 +14725,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       canvas.innerHTML = '<p style="color: #6b7280; text-align: center;">Securely loading chapter...</p>';
       const { text, comments } = await loadChapter(signer, authorDid, email3, chapters[0].name);
       currComments = comments;
-      console.log("[app] comments received=", comments);
       renderChapterText(text, comments);
     }
   } catch (err) {
@@ -14768,7 +14767,7 @@ function renderChapterList(chapters, onSelect) {
   const ul = document.getElementById("dynamic-chapter-list");
   const sorted = [...chapters].sort((a, b) => a.name.localeCompare(b.name, void 0, { numeric: true, sensitivity: "base" }));
   ul.innerHTML = "";
-  for (const c of chapters) {
+  for (const c of sorted) {
     const li = document.createElement("li");
     const a = document.createElement("a");
     a.href = "#";
@@ -14784,18 +14783,18 @@ function renderChapterList(chapters, onSelect) {
 }
 function renderChapterText(chapterText, comments) {
   const canvas = document.getElementById("text-canvas");
-  console.log(`[app] chapter text: ${chapterText.slice(0, 25)}...`);
   canvas.innerHTML = `<div id="manuscript-viewport" style="line-height: 1.85; font-size: 1.15rem;">${parseSentencesIntoSpans(chapterText)}</div>`;
   buildSubsectionNavigation();
-  for (const c of comments) {
-    document.querySelector(`.novel-sentence[data-id="${c.sentence_id}"]`)?.classList.add("has-comment");
-  }
+  markCommentedSentences(comments);
   resetFeedbackUI();
   renderComments(comments);
+  updateRevisionUI();
 }
 function renderComments(comments) {
+  const hasRevisions = !!document.querySelector(".rev-del, .rev-ins");
+  const hasComments = comments.length > 0;
   const stream = document.getElementById("comment-list");
-  console.log("[layout] comments=", comments, " len=", comments.length);
+  stream.insertAdjacentHTML("beforebegin", hasRevisions && hasComments ? '<div class="comment-caution">\u26A0 This draft has revisions \u2014 some notes may point at shifted lines.</div>' : "");
   if (!comments.length) {
     stream.innerHTML = '<div class="comment-empty">Click on any line\u2026</div>';
     return;
@@ -14810,7 +14809,14 @@ function renderComments(comments) {
       const span = document.querySelector(
         `.novel-sentence[data-id="${c.sentence_id}"]`
       );
-      if (!span) return;
+      const isOrphan = span === null;
+      const isDrifted = Boolean(span && c.sentence_text && span.textContent.trim() !== c.sentence_text);
+      item.classList.toggle("comment-stale", isOrphan || isDrifted);
+      if (isOrphan || isDrifted) {
+        item.innerHTML = `<span class="comment-ref">\xB6 ${c.sentence_id} \xB7 stale</span>  
+                      <p>${c.feedback}</p>  
+                      ${c.sentence_text ? `<small class="stale-ctx">was: "${esc2(c.sentence_text.slice(0, 80))}\u2026"</small>` : ""}`;
+      }
       span.scrollIntoView({ behavior: "smooth", block: "center" });
       document.querySelectorAll(".novel-sentence").forEach((el) => el.classList.remove("active-highlight"));
       span.classList.add("active-highlight");
@@ -14825,28 +14831,39 @@ function showError(msg) {
     statusEl.textContent = msg;
   }
 }
+var CRITIC = /\{~~.*?~~\}|\{--.*?--\}|\{\+\+.*?\+\+\}|\{>>.*?<<\}/gs;
+var MD_EM = /\*\S[^*]*\*/g;
+var INLINE = new RegExp(`${CRITIC.source}|${MD_EM.source}`, "gs");
+var esc2 = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+var renderCriticMarkup = (s) => s.replace(/\{~~(.*?)~>(.*?)~~\}/gs, (_, a, b) => `<del class="rev-del">${esc2(a)}</del><ins class="rev-ins">${esc2(b)}</ins>`).replace(/\{~~(.*?)~~\}/gs, (_, a) => `<del class="rev-del">${esc2(a)}</del>`).replace(/\{--(.*?)--\}/gs, (_, a) => `<del class="rev-del">${esc2(a)}</del>`).replace(/\{\+\+(.*?)\+\+\}/gs, (_, a) => `<ins class="rev-ins">${esc2(a)}</ins>`).replace(/\{>>(.*?)<<\}/gs, (_, a) => `<span class="rev-comment" title="${esc2(a)}">\u203B</span>`);
 function parseSentencesIntoSpans(text) {
   const paragraphs = text.split(/\n+/);
   let globalIndexCounter = 0;
   const segmenter = new Intl.Segmenter(void 0, { granularity: "sentence" });
+  const emitSpan = (content) => {
+    if (!content.trim()) return "";
+    const id = globalIndexCounter++;
+    return `<span class="novel-sentence" data-id="${id}">${content}</span>`;
+  };
+  const renderInline = (m) => m.startsWith("*") ? `<em>${esc2(m.slice(1, -1))}</em>` : renderCriticMarkup(m);
   return paragraphs.map((paragraphContent) => {
     const trimmed = paragraphContent.trim();
     if (!trimmed) return "";
     if (trimmed.startsWith("# ")) {
-      return `<h1 style="margin: 2rem 0 1rem 0; font-size: 1.8rem; font-weight: 700; color: #111827;">${trimmed.substring(2)}</h1>`;
+      return `<h1 style="margin: 2rem 0 1rem 0; font-size: 1.8rem; font-weight: 700; color: #111827;">${esc2(trimmed.substring(2))}</h1>`;
     }
     if (trimmed.startsWith("## ")) {
-      return `<h2 class="manuscript-section" style="margin: 1.5rem 0 0.75rem 0; font-size: 1.4rem; font-weight: 600; color: #374151;">${trimmed.substring(3)}</h2>`;
+      return `<h2 class="manuscript-section" style="margin: 1.5rem 0 0.75rem 0; font-size: 1.4rem; font-weight: 600; color: #374151;">${esc2(trimmed.substring(3))}</h2>`;
     }
     if (trimmed.startsWith("### ")) {
-      return `<h3 class="manuscript-subsection" style="margin: 1.25rem 0 0.5rem 0; font-size: 1.2rem; font-weight: 600; color: #4b5563; font-style: italic;">${trimmed.substring(4)}</h3>`;
+      return `<h3 class="manuscript-subsection" style="margin: 1.25rem 0 0.5rem 0; font-size: 1.2rem; font-weight: 600; color: #4b5563; font-style: italic;">${esc2(trimmed.substring(4))}</h3>`;
     }
-    const segments = segmenter.segment(trimmed);
-    const wrappedSpans = Array.from(segments).map((segmentObj) => {
-      const sentenceText = segmentObj.segment;
-      if (!sentenceText.trim()) return "";
-      const currentId = globalIndexCounter++;
-      return `<span class="novel-sentence" data-id="${currentId}">${sentenceText}</span>`;
+    const pieces = trimmed.split(INLINE);
+    const markers = trimmed.match(INLINE) ?? [];
+    const wrappedSpans = pieces.map((piece, i) => {
+      const plainSpans = Array.from(segmenter.segment(piece)).filter((seg) => seg.segment.trim()).map((seg) => emitSpan(esc2(seg.segment))).join("");
+      const markerSpan = markers[i] ? emitSpan(renderInline(markers[i])) : "";
+      return plainSpans + markerSpan;
     }).join("");
     return `<p style="margin-bottom: 1.5rem; text-indent: 1.5rem; text-align: justify; font-size: 1.15rem; line-height: 1.8;">${wrappedSpans}</p>`;
   }).join("");
@@ -14873,10 +14890,11 @@ function selectSentence(element, id) {
   document.querySelectorAll(".novel-sentence").forEach((el) => el.classList.remove("active-highlight"));
   element.classList.add("active-highlight");
   selectedSentenceId = id;
+  const comment = currComments.find((c) => c.sentence_id === id);
   const panel = document.getElementById("comment-composer");
   panel.innerHTML = `
-    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<a href="#" id="close-composer"></a></h4>
-    <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here..."></textarea>
+    <h4 style="margin-bottom: 12px; font-size: 0.95rem; color: #111827;">Leave Note for Sentence #${id}<span><small><a href="#" id="close-composer" style="text-decoration: none">&nbsp;&nbsp;Close</small></span></h4>
+    <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here...">${comment ? comment.feedback : ""}</textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
   panel.querySelector("button:last-of-type").addEventListener("click", () => submitLineNote(selectedSentenceId));
@@ -14906,10 +14924,13 @@ async function submitLineNote(sId) {
     const signer = await getExistingSigner();
     const authorDid = await getAuthorDid();
     const email3 = await getReviewerEmail();
+    const spanText = document.querySelector(
+      `.novel-sentence[data-id="${sId}"]`
+    )?.textContent?.trim() ?? "";
     const invocation = await ChapterFeedbackCap.invoke({
       iss: signer,
       sub: parse3(authorDid).did,
-      args: { email: email3, sentenceId: sId, slug: activeChapterSlug, feedback: commentText },
+      args: { email: email3, sentenceId: sId, slug: activeChapterSlug, feedback: commentText, sentenceText: spanText.slice(0, 300) },
       store: ucanStore,
       exp: Math.floor(Date.now() / 1e3) + 300,
       verifierResolver
@@ -14929,5 +14950,10 @@ async function submitLineNote(sId) {
     console.error("[feedback] submit failed:", error51);
     alert(`Failed to save feedback: ${error51 instanceof Error ? error51.message : String(error51)}`);
   }
+}
+function updateRevisionUI() {
+  const hasRevisions = !!document.querySelector(".rev-del, .rev-ins, .rev-comment");
+  document.getElementById("rev-legend")?.classList.toggle("hidden", !hasRevisions);
+  document.getElementById("toggle-revisions")?.classList.toggle("hidden", !hasRevisions);
 }
 //# sourceMappingURL=app.js.map
