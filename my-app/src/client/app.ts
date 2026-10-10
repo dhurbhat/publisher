@@ -377,6 +377,7 @@ async function submitLineNote(sId: number) {
         currComments.push({
             sentence_id: sId,
             feedback: commentText,
+            sentence_text: spanText,
             created_at: new Date().toISOString(),
         })
         currComments.sort((a, b) => a.sentence_id - b.sentence_id)  // match server ORDER BY  
