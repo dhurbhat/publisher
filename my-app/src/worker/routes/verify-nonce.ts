@@ -6,7 +6,6 @@ import { ChapterCap } from '../../shared/chapter-cap.js'
 import type { Bindings } from '../../index.js'
 import { parse } from 'iso-did'
 import { AuthorizeRequestSchema } from '../../shared/schemas.js'
-import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 import { Delegation } from 'iso-ucan/delegation'
 
@@ -56,6 +55,62 @@ export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
             delegationToken: delegation.toString(),
             workerDID: workerSigner.did,
             authorDID: authorDid,
+        })
+    })
+
+    // New device registers its DID -> gets a 6-digit code (lazy: only on click)  
+    app.post('/api/link/request', async (c) => {
+        const { did } = await c.req.json()
+        if (typeof did !== 'string' || !did.startsWith('did:')) {
+            return c.json({ error: 'invalid did' }, 400)
+        }
+        const code = String(Math.floor(100000 + Math.random() * 900000))
+        await c.env.READER_SESSION_KV.put(`linkcode:${code}`, did, { expirationTtl: 300 })
+        return c.json({ code })
+    })
+
+    // Old device resolves code -> did  
+    app.get('/api/link/lookup/:code', async (c) => {
+        const did = await c.env.READER_SESSION_KV.get(`linkcode:${c.req.param('code')}`)
+        if (!did) return c.json({ error: 'expired or invalid code' }, 404)
+        return c.json({ did })
+    })
+
+    // Old device uploads the minted R1->R2 delegation  
+    app.post('/api/link/approve', async (c) => {
+        const { token, parentDelegation, did, email } = await c.req.json()
+        console.log(`t: ${token} pd: ${parentDelegation}`)
+        let d, pd
+        try { 
+            d = await Delegation.fromString(token) 
+            pd = await Delegation.fromString(parentDelegation)
+        } catch {
+            return c.json({ error: 'invalid delegation' }, 400)
+        }
+        if (d.aud !== did) return c.json({ error: 'aud mismatch' }, 400)
+        const store = new Store(new CloudflareUcanStore(c.env.UCAN_STORE_KV))
+        const awDelegation = await Delegation.fromString(c.env.AUTHOR_WORKER_DELEGATION)
+        
+        await store.add([awDelegation, pd, d])   // seed A->W (as in verify-nonce) + R1->R2  
+        await c.env.READER_SESSION_KV.put(`linkgrant:${did}`,
+            JSON.stringify({ token, parentToken: parentDelegation, email }), { expirationTtl: 300 })
+        await c.env.READER_SESSION_KV.delete(`linkcode:${(await c.env.READER_SESSION_KV
+            .get(`linkreq-code-for:${did}`)) ?? ''}`) // optional cleanup  
+        return c.json({ ok: true })
+    })
+
+    // New device polls for the grant  
+    app.get('/api/link/claim/:did', async (c) => {
+        const raw = await c.env.READER_SESSION_KV.get(`linkgrant:${c.req.param('did')}`)
+        if (!raw) return c.json({ pending: true, token: null })
+        const { token, parentToken, email } = JSON.parse(raw)
+        await c.env.READER_SESSION_KV.delete(`linkgrant:${c.req.param('did')}`) // consume  
+        return c.json({
+            pending: false,
+            token, parentToken, email,
+            authorWorkerDelegation: c.env.AUTHOR_WORKER_DELEGATION,
+            authorDID: c.env.AUTHOR_DID,
+            workerDID: c.env.WORKER_DID,
         })
     })
 }

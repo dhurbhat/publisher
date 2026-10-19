@@ -1,5 +1,5 @@
-import { ChapterFeedbackCap, ChapterListCap, ChapterReadCap } from '../shared/chapter-cap.js'
-import { ucanStore } from './ucan-browser-store.js'
+import { ChapterCap, ChapterFeedbackCap, ChapterListCap, ChapterReadCap } from '../shared/chapter-cap.js'
+import { rawIdb, ucanStore } from './ucan-browser-store.js'
 import {
     getOrCreateSigner,
     hasDelegation,
@@ -7,6 +7,7 @@ import {
     getAuthorDid,
     getReviewerEmail,
     getExistingSigner,
+    acceptDeviceDelegation,
 } from './reviewer-session.js'
 import { base64 } from 'iso-base/rfc4648'
 import { parse } from 'iso-did'
@@ -14,6 +15,8 @@ import { Resolver } from 'iso-signatures/verifiers/resolver.js'
 import * as EdDSA from 'iso-signatures/verifiers/eddsa.js'
 import type { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
 import { CommentRow } from '../worker/routes/chapter.js'
+import { LinkClaimResponseSchema, LinkLookupResponseSchema } from '../shared/schemas.js'
+import { Delegation } from 'iso-ucan/delegation'
 
 const verifierResolver = new Resolver({ ...EdDSA.verifier })
 let selectedSentenceId: number | null = null
@@ -138,6 +141,138 @@ function showAuthView(onSubmit: (email: string, nonce: string) => Promise<void>)
             statusEl.textContent = err.message
         }
     })
+    // LAZY: only now do we register a DID + poll — first-time users cost nothing  
+    const link = document.getElementById('show-device-link')
+    const linkSection = document.getElementById('device-link-section')
+    if (link && linkSection) {
+        link.addEventListener('click', (e) => {
+            e.preventDefault()
+            console.log('show-device-link clicked')
+            linkSection.classList.remove('hidden')
+            link.closest('.link-device-toggle')?.classList.add('hidden')
+            startDeviceLink()
+        })
+    }
+    else {
+        console.warn('[auth] device-link elements missing:', { link, linkSection })
+    }
+
+}
+
+async function startDeviceLink() {
+    const signer = await getOrCreateSigner()
+    const statusEl = document.getElementById('device-link-status')!
+    try {
+        const res = await fetch('/api/link/request', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ did: signer.did }),
+        })
+        const { code } = await res.json() as { code: string }
+        console.log(`[app] ${code} generated`)
+        document.getElementById('device-link-code')!.textContent = code.replace(/(\d{3})(\d{3})/, '$1 $2')
+        document.getElementById('device-did')!.textContent = `${signer.did.slice(0, 24)}…${signer.did.slice(-12)}`
+
+        const deadline = Date.now() + 5 * 60 * 1000
+        const poll = setInterval(async () => {
+            try {
+                if (Date.now() > deadline) {
+                    clearInterval(poll)
+                    statusEl.textContent = 'Code expired — reload to get a new one.'
+                    return
+                }
+                const res = await fetch(`/api/link/claim/${signer.did}`)
+                const data = LinkClaimResponseSchema.parse(await res.json())
+                if (data.pending) return
+                const { token, parentToken, email, authorWorkerDelegation, authorDID, workerDID } = data
+                clearInterval(poll)
+                statusEl.textContent = 'Approved — activating…'
+                await acceptDeviceDelegation(token, parentToken, authorWorkerDelegation, workerDID, authorDID, email)
+                window.location.reload()
+            } catch (e: any) { statusEl.textContent = `Poll error: ${e.message}` }
+        }, 4000)
+    } catch (e: any) { statusEl.textContent = e.message }
+}
+
+function openApproveModal(email: string) {  
+    const modal = document.getElementById('device-approve-modal')!  
+    const codeInput = document.getElementById('approve-code-input') as HTMLInputElement  
+    const steps = {  
+        code: document.getElementById('approve-step-code')!,  
+        confirm: document.getElementById('approve-step-confirm')!,  
+        done: document.getElementById('approve-step-done')!,  
+    }  
+    const showStep = (k: keyof typeof steps) =>  
+        Object.entries(steps).forEach(([key, el]) => el.classList.toggle('hidden', key !== k))  
+    const close = () => modal.classList.add('hidden')  
+  
+    let pendingDid: string | null = null  
+  
+    modal.classList.remove('hidden')  
+    codeInput.value = ''  
+    showStep('code')  
+    codeInput.focus()  
+  
+    document.getElementById('approve-cancel-btn')!.onclick = close  
+    document.getElementById('approve-back-btn')!.onclick = () => showStep('code')  
+    document.getElementById('approve-close-btn')!.onclick = close  
+    modal.onclick = (e) => { if (e.target === modal) close() }   // backdrop click  
+  
+    document.getElementById('approve-lookup-btn')!.onclick = async () => {  
+        const code = codeInput.value.replace(/\s/g, '')  
+        if (!/^\d{6}$/.test(code)) { codeInput.focus(); return }  
+        try {  
+            const lookup = await fetch(`/api/link/lookup/${code}`)  
+            if (!lookup.ok) {  
+                document.getElementById('approve-result')!.textContent =  
+                    'Code expired or invalid — have the other device request a new one.'  
+                showStep('done')  
+                return  
+            }  
+            const { did } = LinkLookupResponseSchema.parse(await lookup.json())  
+            pendingDid = did  
+            document.getElementById('approve-new-did')!.textContent = did  
+            showStep('confirm')  
+        } catch (e: any) {  
+            document.getElementById('approve-result')!.textContent = `Lookup failed: ${e.message}`  
+            showStep('done')  
+        }  
+    }  
+  
+    document.getElementById('approve-confirm-btn')!.onclick = async () => {  
+        if (!pendingDid) return  
+        try {  
+            const s = await getExistingSigner()  
+            const authorDid = await getAuthorDid()  
+            const delegation = await ChapterCap.delegate({  
+                iss: s,  
+                aud: parse(pendingDid).did,  
+                sub: parse(authorDid).did,  
+                pol: [['==', '.email', email]],  
+                exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,  
+                store: ucanStore,  
+            })
+            /* Fetch parentDelegation if any */
+            const p = await rawIdb.get('wr-delegation')
+            if (typeof p !== 'string' || !p.startsWith('gl')) {
+                document.getElementById('approve-result')!.textContent = 'Your session is still in legacy format - sign in once more and try again'
+                showStep('done')
+            }
+            const parentDelegation = p
+            console.log(`[app] sending: ${JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email })}`)
+            const r = await fetch('/api/link/approve', {  
+                method: 'POST',  
+                headers: { 'Content-Type': 'application/json' },  
+                body: JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email }),  
+            })  
+            document.getElementById('approve-result')!.textContent = r.ok  
+                ? 'Device approved — it will finish setup automatically.'  
+                : `Approval failed: ${await r.text()}`  
+            showStep('done')  
+        } catch (e: any) {  
+            document.getElementById('approve-result')!.textContent = `Link failed: ${e.message}`  
+            showStep('done')  
+        }  
+    }  
 }
 
 function showWorkspaceView(email: string, did: string) {
@@ -145,11 +280,17 @@ function showWorkspaceView(email: string, did: string) {
     document.getElementById('workspace-container')?.classList.remove('hidden')
     document.getElementById('main-reader')?.classList.remove('hidden')
     document.getElementById('subsection-container')?.classList.remove('hidden')
+    const dlink = document.getElementById('device-link')
     const badge = document.getElementById('token-status-badge')
     if (badge) {
-        badge.textContent = `✓ ${email} · ${did.slice(0, 12)}…${did.slice(-6)}`
+        badge.textContent = `✓ Authorized to: ${email} · ${did.slice(0, 6)}…${did.slice(-3)}`
         badge.title = did   // full DID on hover  
         badge.classList.replace('badge-inactive', 'badge-active')
+        badge.style.cursor = 'pointer'
+    }
+    if (dlink) {
+        dlink.classList.remove('hidden')
+        dlink.addEventListener('click', async () => openApproveModal(email) )
     }
 }
 

@@ -171,7 +171,7 @@ body {
 }
 
 /* Zero-Trust PIN Form Box styling */
-.challenge-overlay-wrapper {
+/* .challenge-overlay-wrapper {
     max-width: 420px;
     margin: 120px auto;
     padding: 40px 32px;
@@ -181,7 +181,8 @@ body {
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     text-align: center;
-}
+    margin-bottom: 1.25rem;
+} */
 
 /* Pure numeric verification spacing input tracking */
 .pin-digit-box {
@@ -230,9 +231,11 @@ body {
     align-items: center;
     justify-content: center;
     z-index: 20;
+    overflow-y: auto;
 }
 
 .auth-card {
+    margin: auto;
     max-width: 480px;
     width: 100%;
     background: var(--card-bg);
@@ -249,19 +252,28 @@ body {
     text-align: center;
 }
 
+.auth-divider {  
+  margin: 24px 0;  
+  border: none;  
+  border-top: 1px solid var(--border-color);  
+}
+
 .subtitle {
     margin-bottom: 24px;
     color: var(--text-muted);
-    font-size: 0.9rem;
-    text-align: center;
+    font-size: 1.0rem;
+    text-align: left;
 }
 
-.enclave-footer {
+/*.enclave-footer {
     margin-top: 20px;
     text-align: center;
     color: #9ca3af;
     font-size: 0.85rem;
-}
+} */
+
+.link-device-toggle { text-align: center; margin-top: 16px; font-size: 0.875rem; }  
+.link-device-toggle a { color: #4b5563; }
 
 .form-group {
     margin-bottom: 1.25rem;
@@ -498,3 +510,74 @@ body.hide-revisions .rev-comment {
     color: var(--text-muted);
     font-style: italic;
 }
+
+/* --- Device approve modal (reuses .auth-overlay base for backdrop) --- */  
+.modal-overlay {  
+    position: fixed;  
+    inset: 0;  
+    background: rgba(17, 24, 39, 0.5);  
+    display: flex;  
+    overflow-y: auto;  
+    z-index: 30;               /* above .auth-overlay (20) */  
+}  
+  
+.modal-card {  
+    max-width: 420px;  
+    width: 100%;  
+    margin: auto;  
+    background: var(--card-bg);  
+    padding: 28px;  
+    border-radius: 10px;  
+    border: 1px solid var(--border-color);  
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);  
+    text-align: center;  
+}  
+  
+.modal-card h2 {  
+    font-size: 1.1rem;  
+    font-weight: 600;  
+    margin-bottom: 12px;  
+}  
+  
+.modal-card .subtitle {  
+    margin-bottom: 16px;  
+}  
+  
+.modal-card .pin-digit-box {  
+    font-size: 1.5rem;  
+    margin-bottom: 16px;  
+}  
+  
+.modal-did {  
+    font-family: ui-monospace, monospace;  
+    font-size: 0.8rem;  
+    color: var(--text-muted);  
+    word-break: break-all;  
+    margin-bottom: 16px;  
+}  
+  
+.modal-actions {  
+    display: flex;  
+    gap: 10px;  
+}  
+  
+.modal-actions button {  
+    flex: 1;  
+    padding: 12px;  
+    border-radius: 8px;  
+    font-weight: 600;  
+    font-size: 0.95rem;  
+    cursor: pointer;  
+    border: 1px solid var(--border-color);  
+    background: #fff;  
+}  
+  
+.modal-actions button.approve-btn {  
+    background: #111827;  
+    color: #fff;  
+    border: none;  
+}  
+  
+.modal-actions button:hover { filter: brightness(0.95); }  
+  
+#approve-result { min-height: 1.2em; margin-bottom: 12px; }

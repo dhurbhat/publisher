@@ -56,8 +56,8 @@ export async function verifyNonce(
   await ucanStore.add([awDelegation, wrDelegation]) // Worker->Reviewer, persisted into IndexedDB
   console.log(`[session] aw: ${awDelegation} wr: ${wrDelegation}`)
 
-  await rawIdb.set('wr-delegation', wrDelegation)
-  await rawIdb.set('aw-delegation', awDelegation)
+  await rawIdb.set('wr-delegation', wrDelegation.toString())
+  await rawIdb.set('aw-delegation', awDelegation.toString())
 
   await rawIdb.set(AUTHOR_DID_KEY, authorDID)
   await rawIdb.set(WORKER_DID_KEY, workerDID)
@@ -75,3 +75,22 @@ export async function getReviewerEmail(): Promise<string> {
   if (!v) throw new Error('Reviewer email not found')
   return v as string
 }
+
+export async function acceptDeviceDelegation(
+  delegationToken: string,
+  parentToken: string,
+  authorWorkerDelegation: string,
+  workerDID: string,
+  authorDID: string,
+  email: string,
+) {
+  const wrDelegation = await Delegation.fromString(delegationToken)
+  const parentDelegation = await Delegation.fromString(parentToken)
+  const awDelegation = await Delegation.fromString(authorWorkerDelegation)
+  await ucanStore.add([awDelegation, parentDelegation, wrDelegation])
+  await rawIdb.set('wr-delegation', wrDelegation.toString())
+  await rawIdb.set('aw-delegation', awDelegation.toString())
+  await rawIdb.set(AUTHOR_DID_KEY, authorDID)
+  await rawIdb.set(WORKER_DID_KEY, workerDID)
+  await rawIdb.set(EMAIL_KEY, email)
+} 
