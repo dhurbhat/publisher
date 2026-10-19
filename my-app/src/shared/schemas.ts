@@ -17,7 +17,7 @@ export const AuthorizeRequestSchema = z.object({
 export type AuthorizeRequest = z.infer<typeof AuthorizeRequestSchema>
 export type AuthorizeResponse = z.infer<typeof AuthorizeResponseSchema>
 
-const CommentsResponseSchema = z.object({  
+/*const CommentsResponseSchema = z.object({  
     slug: z.string(),  
     text: z.string(),  
     comments: z.array(z.object({  
@@ -25,4 +25,23 @@ const CommentsResponseSchema = z.object({
         feedback: z.string(),  
         created_at: z.string(),  
     })),  
-})
+})*/
+
+export const LinkLookupResponseSchema = z.object({  
+  did: z.string().startsWith('did:') as z.ZodType<`did:${string}:${string}`>,  
+}) 
+
+export const LinkClaimResponseSchema = z.discriminatedUnion('pending', [  
+  z.object({ pending: z.literal(true), token: z.null() }),  
+  z.object({  
+    pending: z.literal(false),  
+    token: z.string(),
+    parentToken: z.string(),
+    email: z.email(),  
+    authorWorkerDelegation: z.string(),  
+    authorDID: z.string(),  
+    workerDID: z.string(),  
+  }),  
+])
+
+export type LinkClaimResponse = z.infer<typeof LinkClaimResponseSchema>
