@@ -1,50 +1,50 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "my-app",
-  "main": "src/index.tsx",
-  "compatibility_date": "2026-08-23",
-  // "compatibility_flags": [
-  //   "nodejs_compat"
-  // ],
-  // "vars": {
-  //   "MY_VAR": "my-variable"
-  // },
-  "kv_namespaces": [
-    {
-      "binding": "NOVEL_TEXT_KV",
-      "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    },
-    {
-      "binding": "READER_SESSION_KV",
-      "id": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
-    },
-    {
-      "binding": "UCAN_STORE_KV",
-      "id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-    }
-  ],
-  // "r2_buckets": [
-  //   {
-  //     "binding": "MY_BUCKET",
-  //     "bucket_name": "my-bucket"
-  //   }
-  // ],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "novel-feedback-db",
-      "database_id": "DB_ID"
-    }
-  ],
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS"
-  }
-  // "ai": {
-  //   "binding": "AI"
-  // },
-  // "observability": {
-  //   "enabled": true,
-  //   "head_sampling_rate": 1
-  // }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "manuscript-reviewer",
+	"main": "src/index.tsx",
+	"compatibility_date": "2026-08-23",
+	// "compatibility_flags": [
+	//   "nodejs_compat"
+	// ],
+	// "vars": {
+	//   "MY_VAR": "my-variable"
+	// },
+	"kv_namespaces": [
+		{
+			"binding": "NOVEL_TEXT_KV",
+			"id": "148a704b39ce4e5c896bd0e23f786df4"
+		},
+		{
+			"binding": "READER_SESSION_KV",
+			"id": "a7208b414ba04638921d9a8667106856"
+		},
+		{
+			"binding": "UCAN_STORE_KV",
+			"id": "b8660e492c7545e58645d90624796fd7"
+		}
+	],
+	// "r2_buckets": [
+	//   {
+	//     "binding": "MY_BUCKET",
+	//     "bucket_name": "my-bucket"
+	//   }
+	// ],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "novel-feedback-db",
+			"database_id": "bba9f119-6560-4858-a295-1d792c778793"
+		}
+	],
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
+	}
+	// "ai": {
+	//   "binding": "AI"
+	// },
+	// "observability": {
+	//   "enabled": true,
+	//   "head_sampling_rate": 1
+	// }
 }

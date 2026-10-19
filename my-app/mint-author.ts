@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import { MemoryDriver } from 'iso-kv/drivers/memory.js'
 import { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
 import { Store } from 'iso-ucan/store'
-import { ChapterCap } from './src/worker/chapter-cap'
+import { ChapterCap } from './src/shared/chapter-cap.ts'
 import process from 'node:process'
 
 async function uploadKv(key: string, value: string, expiration?: number) {  
