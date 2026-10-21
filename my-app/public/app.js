@@ -14731,6 +14731,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     document.getElementById("toggle-toc").addEventListener("click", () => {
       document.getElementById("left-sidebar").classList.toggle("collapsed");
+      console.log(`[app] left-sidebar ${document.getElementById("left-sidebar").classList.toString()}`);
     });
     document.getElementById("toggle-comments").addEventListener("click", () => {
       document.getElementById("right-sidebar").classList.toggle("collapsed");
@@ -14934,9 +14935,6 @@ function renderChapterList(chapters, onSelect) {
     a.addEventListener("click", (e) => {
       e.preventDefault();
       onSelect(c.name);
-      if (window.matchMedia("(max-width: 1024px)").matches) {
-        document.getElementById("left-sidebar")?.classList.add("collapsed");
-      }
     });
     li.appendChild(a);
     ul.appendChild(li);

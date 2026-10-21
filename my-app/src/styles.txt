@@ -590,13 +590,14 @@ body.hide-revisions .rev-comment {
 /* --- Responsive: tablet / iPad portrait (≤1024px) --- */  
 @media (max-width: 1024px) {  
     .left-sidebar {  
-        position: absolute;  
+        position: absolute;
+        left: 0;
+        top: 0;
         z-index: 15;  
-        height: 100%;  
+        height: 100%;
+        margin-left: 0;
         box-shadow: 4px 0 12px rgba(0,0,0,0.1);  
     }  
-    /* start collapsed; #toggle-toc opens it as an overlay drawer */  
-    .left-sidebar { margin-left: -260px; }  
     .left-sidebar.collapsed { margin-left: -260px; }  
     .left-sidebar.open { margin-left: 0; }  
   
