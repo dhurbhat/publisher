@@ -17,6 +17,7 @@ import type { EdDSASigner } from 'iso-signatures/signers/eddsa.js'
 import { CommentRow } from '../worker/routes/chapter.js'
 import { LinkClaimResponseSchema, LinkLookupResponseSchema } from '../shared/schemas.js'
 import { Delegation } from 'iso-ucan/delegation'
+import { diffWordsWithSpace } from 'diff'
 
 const verifierResolver = new Resolver({ ...EdDSA.verifier })
 let selectedSentenceId: number | null = null
@@ -68,6 +69,38 @@ async function loadChapter(signer: EdDSASigner, authorDid: string, email: string
     return { text, comments }
 }
 
+async function loadChapterDiff(signer: EdDSASigner, authorDid: string, email: string, slug: string) {
+    const invocation = await ChapterReadCap.invoke({
+        iss: signer,
+        sub: parse(authorDid).did,
+        args: { email, slug, reviewerDid: signer.did },
+        store: ucanStore,
+        exp: Math.floor(Date.now() / 1000) + 300,
+        verifierResolver,
+    })
+    return postInvocation<{
+        slug: string, oldVersion: number, newVersion: number,
+        oldText: string, newText: string
+    }>(`/api/chapters/${slug}/diff`, invocation.bytes)
+}
+
+function renderDiffView(oldText: string, newText: string, oldV: number, newV: number) {
+    const canvas = document.getElementById('text-canvas')!
+    const inlineDiff = diffWordsWithSpace(oldText, newText).map(p =>
+        p.added ? `<ins class="rev-ins">${esc(p.value)}</ins>`
+            : p.removed ? `<del class="rev-del">${esc(p.value)}</del>`
+                : esc(p.value)
+    ).join('')
+    canvas.innerHTML = `  
+      <div class="diff-split">  
+        <div class="diff-pane"><div class="diff-tag">v${oldV}</div>${parseSentencesIntoSpans(oldText)}</div>  
+        <div class="diff-pane"><div class="diff-tag">v${newV}</div><div class="diff-raw">${inlineDiff}</div></div>  
+      </div>`
+    // reuse the existing legend — diff uses the same .rev-ins/.rev-del classes  
+    document.getElementById('rev-legend')?.classList.remove('hidden')
+    document.getElementById('toggle-revisions')?.classList.remove('hidden')
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // console.log('[app] DOMContentLoaded fired')
     try {
@@ -97,6 +130,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('toggle-revisions')!.addEventListener('click', (e) => {
             const hiding = document.body.classList.toggle('hide-revisions')
                 ; (e.currentTarget as HTMLElement).textContent = hiding ? 'Show changes' : 'Hide changes'
+        })
+        document.getElementById('compare-versions')!.addEventListener('click', async () => {
+            if (!activeChapterSlug) return
+            try {
+                const d = await loadChapterDiff(signer, authorDid, email, activeChapterSlug)
+                renderDiffView(d.oldText, d.newText, d.oldVersion, d.newVersion)
+            } catch (e: any) {
+                showError(e.message) // e.g. "only one version exists"  
+            }
         })
 
         const chapters = await loadChapters(signer, authorDid, email)
@@ -193,63 +235,63 @@ async function startDeviceLink() {
     } catch (e: any) { statusEl.textContent = e.message }
 }
 
-function openApproveModal(email: string) {  
-    const modal = document.getElementById('device-approve-modal')!  
-    const codeInput = document.getElementById('approve-code-input') as HTMLInputElement  
-    const steps = {  
-        code: document.getElementById('approve-step-code')!,  
-        confirm: document.getElementById('approve-step-confirm')!,  
-        done: document.getElementById('approve-step-done')!,  
-    }  
-    const showStep = (k: keyof typeof steps) =>  
-        Object.entries(steps).forEach(([key, el]) => el.classList.toggle('hidden', key !== k))  
-    const close = () => modal.classList.add('hidden')  
-  
-    let pendingDid: string | null = null  
-  
-    modal.classList.remove('hidden')  
-    codeInput.value = ''  
-    showStep('code')  
-    codeInput.focus()  
-  
-    document.getElementById('approve-cancel-btn')!.onclick = close  
-    document.getElementById('approve-back-btn')!.onclick = () => showStep('code')  
-    document.getElementById('approve-close-btn')!.onclick = close  
+function openApproveModal(email: string) {
+    const modal = document.getElementById('device-approve-modal')!
+    const codeInput = document.getElementById('approve-code-input') as HTMLInputElement
+    const steps = {
+        code: document.getElementById('approve-step-code')!,
+        confirm: document.getElementById('approve-step-confirm')!,
+        done: document.getElementById('approve-step-done')!,
+    }
+    const showStep = (k: keyof typeof steps) =>
+        Object.entries(steps).forEach(([key, el]) => el.classList.toggle('hidden', key !== k))
+    const close = () => modal.classList.add('hidden')
+
+    let pendingDid: string | null = null
+
+    modal.classList.remove('hidden')
+    codeInput.value = ''
+    showStep('code')
+    codeInput.focus()
+
+    document.getElementById('approve-cancel-btn')!.onclick = close
+    document.getElementById('approve-back-btn')!.onclick = () => showStep('code')
+    document.getElementById('approve-close-btn')!.onclick = close
     modal.onclick = (e) => { if (e.target === modal) close() }   // backdrop click  
-  
-    document.getElementById('approve-lookup-btn')!.onclick = async () => {  
-        const code = codeInput.value.replace(/\s/g, '')  
-        if (!/^\d{6}$/.test(code)) { codeInput.focus(); return }  
-        try {  
-            const lookup = await fetch(`/api/link/lookup/${code}`)  
-            if (!lookup.ok) {  
-                document.getElementById('approve-result')!.textContent =  
-                    'Code expired or invalid — have the other device request a new one.'  
-                showStep('done')  
-                return  
-            }  
-            const { did } = LinkLookupResponseSchema.parse(await lookup.json())  
-            pendingDid = did  
-            document.getElementById('approve-new-did')!.textContent = did  
-            showStep('confirm')  
-        } catch (e: any) {  
-            document.getElementById('approve-result')!.textContent = `Lookup failed: ${e.message}`  
-            showStep('done')  
-        }  
-    }  
-  
-    document.getElementById('approve-confirm-btn')!.onclick = async () => {  
-        if (!pendingDid) return  
-        try {  
-            const s = await getExistingSigner()  
-            const authorDid = await getAuthorDid()  
-            const delegation = await ChapterCap.delegate({  
-                iss: s,  
-                aud: parse(pendingDid).did,  
-                sub: parse(authorDid).did,  
-                pol: [['==', '.email', email]],  
-                exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,  
-                store: ucanStore,  
+
+    document.getElementById('approve-lookup-btn')!.onclick = async () => {
+        const code = codeInput.value.replace(/\s/g, '')
+        if (!/^\d{6}$/.test(code)) { codeInput.focus(); return }
+        try {
+            const lookup = await fetch(`/api/link/lookup/${code}`)
+            if (!lookup.ok) {
+                document.getElementById('approve-result')!.textContent =
+                    'Code expired or invalid — have the other device request a new one.'
+                showStep('done')
+                return
+            }
+            const { did } = LinkLookupResponseSchema.parse(await lookup.json())
+            pendingDid = did
+            document.getElementById('approve-new-did')!.textContent = did
+            showStep('confirm')
+        } catch (e: any) {
+            document.getElementById('approve-result')!.textContent = `Lookup failed: ${e.message}`
+            showStep('done')
+        }
+    }
+
+    document.getElementById('approve-confirm-btn')!.onclick = async () => {
+        if (!pendingDid) return
+        try {
+            const s = await getExistingSigner()
+            const authorDid = await getAuthorDid()
+            const delegation = await ChapterCap.delegate({
+                iss: s,
+                aud: parse(pendingDid).did,
+                sub: parse(authorDid).did,
+                pol: [['==', '.email', email]],
+                exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
+                store: ucanStore,
             })
             /* Fetch parentDelegation if any */
             const p = await rawIdb.get('wr-delegation')
@@ -259,20 +301,20 @@ function openApproveModal(email: string) {
             }
             const parentDelegation = p
             console.log(`[app] sending: ${JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email })}`)
-            const r = await fetch('/api/link/approve', {  
-                method: 'POST',  
-                headers: { 'Content-Type': 'application/json' },  
-                body: JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email }),  
-            })  
-            document.getElementById('approve-result')!.textContent = r.ok  
-                ? 'Device approved — it will finish setup automatically.'  
-                : `Approval failed: ${await r.text()}`  
-            showStep('done')  
-        } catch (e: any) {  
-            document.getElementById('approve-result')!.textContent = `Link failed: ${e.message}`  
-            showStep('done')  
-        }  
-    }  
+            const r = await fetch('/api/link/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email }),
+            })
+            document.getElementById('approve-result')!.textContent = r.ok
+                ? 'Device approved — it will finish setup automatically.'
+                : `Approval failed: ${await r.text()}`
+            showStep('done')
+        } catch (e: any) {
+            document.getElementById('approve-result')!.textContent = `Link failed: ${e.message}`
+            showStep('done')
+        }
+    }
 }
 
 function showWorkspaceView(email: string, did: string) {
@@ -290,7 +332,7 @@ function showWorkspaceView(email: string, did: string) {
     }
     if (dlink) {
         dlink.classList.remove('hidden')
-        dlink.addEventListener('click', async () => openApproveModal(email) )
+        dlink.addEventListener('click', async () => openApproveModal(email))
     }
 }
 

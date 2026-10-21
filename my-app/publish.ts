@@ -2,6 +2,14 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { execSync } from 'child_process'
 
+interface SceneEntry { slug: string, title: string }
+interface ChapterEntry { slug: string, title: string, scenes: SceneEntry[] }
+
+function kvPut(key: string, source: { path?: string, value?: string }, destinationFlag: string) {
+  const src = source.path !== undefined ? `--path="${source.path}"` : `"${source.value}"`
+  execSync(`npx wrangler kv key put "${key} ${src} --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'ignore' })
+}
+
 function compileAndPublish() {
   const args = process.argv.slice(2)
   const targetPath = args[0]
@@ -19,6 +27,17 @@ function compileAndPublish() {
     process.exit(1)
   }
 
+  const destinationFlag = isRemote ? '--remote' : '--local'
+  let version = 1
+  try {
+    const out = execSync(`npx wrangler kv key get "meta:latest" --binding=NOVEL_TEXT_KV ${destinationFlag}`,
+      { encoding: 'utf-8' }
+    ).trim()
+    version = (parseInt(out, 10) || 0) + 1
+  } catch {
+    console.log(`--> No original version number found. Resetting to ${version}`)
+  }
+
   const manuscriptEntries = fs.readdirSync(resolvedPath, { withFileTypes: true })
   const chapterFolders = manuscriptEntries
     .filter(entry => entry.isDirectory())
@@ -26,10 +45,11 @@ function compileAndPublish() {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
 
   console.log(`\n📚 Found ${chapterFolders.length} Ordered Chapter folder(s)...`)
-  const destinationFlag = isRemote ? '--remote' : '--local'
-  
+
   const tempDir = path.join(resolvedPath, '.kv_build_temp')
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir)
+
+  const manifest: ChapterEntry[] = []
 
   chapterFolders.forEach(folder => {
     const rawFolderName = folder.name; // e.g., "01 The SOS Event"
@@ -60,39 +80,38 @@ function compileAndPublish() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '')
 
-    console.log(`\n📖 Compiling Chapter: "${rawFolderName}" (${mdFiles.length} scenes merged)`)
     const chapterTitle = rawFolderName.replace(/^\d+[\s_.-]*/, '').trim()
-    const combinedContent = [
-      `# ${chapterTitle}\n`, // Inject chapter title as H1 header
-      ...mdFiles.map(file => {
-        const rawFileName = path.basename(file, '.md')
-        // Strip sorting prefix from the scene section filename for a clean header
-        const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '')
-        const sourceText = fs.readFileSync(path.join(folderPath, file), 'utf8').trim()
-        const sourceLines = sourceText.split(/\r?\n/)
-        const fileText = sourceLines[0].trim().toLowerCase() === `# ${chapterTitle.toLowerCase()}`
-          ? sourceLines.slice(1).join('\n').trim()
-          : sourceText
-        // Inject the clean scene section title as a Markdown Subtitle (##)
-        const alreadyHasHeader = fileText.startsWith(`# ${cleanSceneTitle}`) || 
-                                 fileText.startsWith(`## ${cleanSceneTitle}`) ||
-                                 fileText.startsWith(`${cleanSceneTitle}\n`)
-        const headerPrefix = alreadyHasHeader ? '' : `## ${cleanSceneTitle}\n\n`
-        return `${headerPrefix}${fileText}`
-      })
-    ].join('\n\n') // Merge smoothly with paragraph gaps
-
-    const tempFilePath = path.join(tempDir, `${cleanSlug}.txt`)
-    fs.writeFileSync(tempFilePath, combinedContent, 'utf8')
-
-    try {
-      console.log(`🚀 Uploading merged timeline ➡️ KV Key: "${cleanSlug}"`)
-      const command = `npx wrangler kv key put "${cleanSlug}" --path="${tempFilePath}" --binding=NOVEL_TEXT_KV ${destinationFlag}`
-      execSync(command, { stdio: 'ignore' })
-    } catch (error: any) {
-      console.error(`❌ Failed to push "${rawFolderName}":`, error.message)
+    console.log(`\n📖 Compiling Chapter: "${rawFolderName}" (${mdFiles.length} scenes)`)
+    const scenes: SceneEntry[] = []
+    for (const file of mdFiles) {
+      const rawFileName = path.basename(file, '.md')
+      // Strip sorting prefix from the scene section filename for a clean header
+      const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '')
+      const sceneSlug = cleanSceneTitle.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '')
+      const sourceText = fs.readFileSync(path.join(folderPath, file), 'utf8').trim()
+      const sourceLines = sourceText.split(/\r?\n/)
+      const fileText = sourceLines[0].trim().toLowerCase() === `# ${chapterTitle.toLowerCase()}`
+        ? sourceLines.slice(1).join('\n').trim()
+        : sourceText
+      const sceneTempPath = path.join(tempDir, `${cleanSlug}--${sceneSlug}.txt`)
+      fs.writeFileSync(sceneTempPath, fileText, 'utf8')
+      const key = `v${version}/${cleanSlug}/${sceneSlug}`
+      try {
+        kvPut(key, { path: sceneTempPath }, destinationFlag)
+        console.log(`  ➡️  ${key}`)
+      } catch (error: any) { console.error(`  ❌ Failed to push "${key}":`, error.message) }
+      scenes.push({ slug: sceneSlug, title: cleanSceneTitle })
     }
+    manifest.push({ slug: cleanSlug, title: chapterTitle, scenes })
   })
+
+  // ---- Write manifest + bump pointer LAST (atomic-ish: readers flip only after all scenes are in) ----  
+  const manifestPath = path.join(tempDir, 'manifest.json')
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
+  kvPut(`v${version}/manifest`, { path: manifestPath }, destinationFlag)
+  kvPut('meta:latest', { value: String(version) }, destinationFlag)
 
   fs.rmSync(tempDir, { recursive: true, force: true })
   console.log('\n🏁 CORE MANUSCRIPT TIMELINE INGESTED SUCCESSFULLY.\n')

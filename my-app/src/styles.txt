@@ -581,3 +581,11 @@ body.hide-revisions .rev-comment {
 .modal-actions button:hover { filter: brightness(0.95); }  
   
 #approve-result { min-height: 1.2em; margin-bottom: 12px; }
+
+/* --- Side-by-side version diff --- */  
+.diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }  
+.diff-pane { border: 1px solid var(--border-color); border-radius: 6px;  
+             padding: 16px; overflow-y: auto; max-height: 80vh; }  
+.diff-tag { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px;  
+            text-transform: uppercase; letter-spacing: 0.05em; }  
+.diff-raw { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.7; }
