@@ -5,5 +5,6 @@ CREATE TABLE feedback (
     sentence_id INTEGER NOT NULL,
     reader_did TEXT NOT NULL,
     feedback TEXT NOT NULL,
+    sentence_text TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
