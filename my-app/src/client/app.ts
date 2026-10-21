@@ -94,6 +94,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (span)
                 selectSentence(span, Number(span.dataset.id))
         })
+        document.getElementById('toggle-toc')!.addEventListener('click', () => {
+            document.getElementById('left-sidebar')!.classList.toggle('collapsed')
+        })
+        document.getElementById('toggle-comments')!.addEventListener('click', () => {
+            document.getElementById('right-sidebar')!.classList.toggle('collapsed')
+        })
+        if (window.matchMedia('(max-width: 700px').matches) {
+            document.getElementById('right-sidebar')!.classList.toggle('collapsed')
+        }
         document.getElementById('toggle-revisions')!.addEventListener('click', (e) => {
             const hiding = document.body.classList.toggle('hide-revisions')
                 ; (e.currentTarget as HTMLElement).textContent = hiding ? 'Show changes' : 'Hide changes'
@@ -193,63 +202,63 @@ async function startDeviceLink() {
     } catch (e: any) { statusEl.textContent = e.message }
 }
 
-function openApproveModal(email: string) {  
-    const modal = document.getElementById('device-approve-modal')!  
-    const codeInput = document.getElementById('approve-code-input') as HTMLInputElement  
-    const steps = {  
-        code: document.getElementById('approve-step-code')!,  
-        confirm: document.getElementById('approve-step-confirm')!,  
-        done: document.getElementById('approve-step-done')!,  
-    }  
-    const showStep = (k: keyof typeof steps) =>  
-        Object.entries(steps).forEach(([key, el]) => el.classList.toggle('hidden', key !== k))  
-    const close = () => modal.classList.add('hidden')  
-  
-    let pendingDid: string | null = null  
-  
-    modal.classList.remove('hidden')  
-    codeInput.value = ''  
-    showStep('code')  
-    codeInput.focus()  
-  
-    document.getElementById('approve-cancel-btn')!.onclick = close  
-    document.getElementById('approve-back-btn')!.onclick = () => showStep('code')  
-    document.getElementById('approve-close-btn')!.onclick = close  
+function openApproveModal(email: string) {
+    const modal = document.getElementById('device-approve-modal')!
+    const codeInput = document.getElementById('approve-code-input') as HTMLInputElement
+    const steps = {
+        code: document.getElementById('approve-step-code')!,
+        confirm: document.getElementById('approve-step-confirm')!,
+        done: document.getElementById('approve-step-done')!,
+    }
+    const showStep = (k: keyof typeof steps) =>
+        Object.entries(steps).forEach(([key, el]) => el.classList.toggle('hidden', key !== k))
+    const close = () => modal.classList.add('hidden')
+
+    let pendingDid: string | null = null
+
+    modal.classList.remove('hidden')
+    codeInput.value = ''
+    showStep('code')
+    codeInput.focus()
+
+    document.getElementById('approve-cancel-btn')!.onclick = close
+    document.getElementById('approve-back-btn')!.onclick = () => showStep('code')
+    document.getElementById('approve-close-btn')!.onclick = close
     modal.onclick = (e) => { if (e.target === modal) close() }   // backdrop click  
-  
-    document.getElementById('approve-lookup-btn')!.onclick = async () => {  
-        const code = codeInput.value.replace(/\s/g, '')  
-        if (!/^\d{6}$/.test(code)) { codeInput.focus(); return }  
-        try {  
-            const lookup = await fetch(`/api/link/lookup/${code}`)  
-            if (!lookup.ok) {  
-                document.getElementById('approve-result')!.textContent =  
-                    'Code expired or invalid — have the other device request a new one.'  
-                showStep('done')  
-                return  
-            }  
-            const { did } = LinkLookupResponseSchema.parse(await lookup.json())  
-            pendingDid = did  
-            document.getElementById('approve-new-did')!.textContent = did  
-            showStep('confirm')  
-        } catch (e: any) {  
-            document.getElementById('approve-result')!.textContent = `Lookup failed: ${e.message}`  
-            showStep('done')  
-        }  
-    }  
-  
-    document.getElementById('approve-confirm-btn')!.onclick = async () => {  
-        if (!pendingDid) return  
-        try {  
-            const s = await getExistingSigner()  
-            const authorDid = await getAuthorDid()  
-            const delegation = await ChapterCap.delegate({  
-                iss: s,  
-                aud: parse(pendingDid).did,  
-                sub: parse(authorDid).did,  
-                pol: [['==', '.email', email]],  
-                exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,  
-                store: ucanStore,  
+
+    document.getElementById('approve-lookup-btn')!.onclick = async () => {
+        const code = codeInput.value.replace(/\s/g, '')
+        if (!/^\d{6}$/.test(code)) { codeInput.focus(); return }
+        try {
+            const lookup = await fetch(`/api/link/lookup/${code}`)
+            if (!lookup.ok) {
+                document.getElementById('approve-result')!.textContent =
+                    'Code expired or invalid — have the other device request a new one.'
+                showStep('done')
+                return
+            }
+            const { did } = LinkLookupResponseSchema.parse(await lookup.json())
+            pendingDid = did
+            document.getElementById('approve-new-did')!.textContent = did
+            showStep('confirm')
+        } catch (e: any) {
+            document.getElementById('approve-result')!.textContent = `Lookup failed: ${e.message}`
+            showStep('done')
+        }
+    }
+
+    document.getElementById('approve-confirm-btn')!.onclick = async () => {
+        if (!pendingDid) return
+        try {
+            const s = await getExistingSigner()
+            const authorDid = await getAuthorDid()
+            const delegation = await ChapterCap.delegate({
+                iss: s,
+                aud: parse(pendingDid).did,
+                sub: parse(authorDid).did,
+                pol: [['==', '.email', email]],
+                exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
+                store: ucanStore,
             })
             /* Fetch parentDelegation if any */
             const p = await rawIdb.get('wr-delegation')
@@ -259,20 +268,20 @@ function openApproveModal(email: string) {
             }
             const parentDelegation = p
             console.log(`[app] sending: ${JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email })}`)
-            const r = await fetch('/api/link/approve', {  
-                method: 'POST',  
-                headers: { 'Content-Type': 'application/json' },  
-                body: JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email }),  
-            })  
-            document.getElementById('approve-result')!.textContent = r.ok  
-                ? 'Device approved — it will finish setup automatically.'  
-                : `Approval failed: ${await r.text()}`  
-            showStep('done')  
-        } catch (e: any) {  
-            document.getElementById('approve-result')!.textContent = `Link failed: ${e.message}`  
-            showStep('done')  
-        }  
-    }  
+            const r = await fetch('/api/link/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: delegation.toString(), parentDelegation: parentDelegation, did: pendingDid, email }),
+            })
+            document.getElementById('approve-result')!.textContent = r.ok
+                ? 'Device approved — it will finish setup automatically.'
+                : `Approval failed: ${await r.text()}`
+            showStep('done')
+        } catch (e: any) {
+            document.getElementById('approve-result')!.textContent = `Link failed: ${e.message}`
+            showStep('done')
+        }
+    }
 }
 
 function showWorkspaceView(email: string, did: string) {
@@ -290,7 +299,7 @@ function showWorkspaceView(email: string, did: string) {
     }
     if (dlink) {
         dlink.classList.remove('hidden')
-        dlink.addEventListener('click', async () => openApproveModal(email) )
+        dlink.addEventListener('click', async () => openApproveModal(email))
     }
 }
 
@@ -307,7 +316,12 @@ function renderChapterList(chapters: { name: string }[], onSelect: (slug: string
             .replace(/-/g, ' ')
             .replace(/\b\w/g, c => c.toUpperCase())
         li.dataset.slug = c.name
-        a.addEventListener('click', (e) => { e.preventDefault(); onSelect(c.name) })
+        a.addEventListener('click', (e) => {
+            e.preventDefault(); onSelect(c.name)
+            if (window.matchMedia('(max-width: 1024px)').matches) {
+                document.getElementById('left-sidebar')?.classList.add('collapsed')
+            }
+        })
         li.appendChild(a)
         ul.appendChild(li)
     }
@@ -472,6 +486,7 @@ function selectSentence(element: HTMLElement, id: number) {
     <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here...">${comment ? comment.feedback : ''}</textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
+    document.getElementById('right-sidebar')!.classList.remove('collapsed')
     panel.querySelector('button:last-of-type')!.addEventListener('click', () => submitLineNote(selectedSentenceId!))
     document.getElementById('close-composer')!.addEventListener('click', (e) => {
         e.preventDefault()
