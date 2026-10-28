@@ -16,9 +16,10 @@ export const TopToolbar: FC = () => (
     <button id="toggle-toc" class="btn-toc">☰ Chapters</button>
     <div class="novel-title">First Murder in 200 Years</div>
     <button id="toggle-revisions" class="btn-toc hidden">Hide changes</button>
-    <button id="compare-versions" class="btn-toc hidden">Compare versions</button>
+    <button id="compare-versions" class="btn-toc hidden">Compare Versions</button>
     <div id="token-status-badge" class="badge-status badge-inactive">No Access Token</div> | 
-    <div id="device-link" class="btn-toc hidden">🔗 Link</div>
+    <div id="device-link" class="btn-toc hidden">🔗 Link</div> |
+    <div id="toggle-comments" class="btn-toc">💬 Comments</div>
   </header>
 )
 
@@ -75,7 +76,7 @@ export const WorkspaceGrid: FC = () => (
         <p class="canvas-welcome-text">Please select a chapter to begin viewing model drafts.</p>
       </article>
     </main>
-    <aside class="right-sidebar">
+    <aside class="right-sidebar" id="right-sidebar">
       <div id="rev-legend" class="rev-legend hidden">
         <strong>Revisions</strong>
         <span class="swatch-del">deleted</span>
@@ -86,7 +87,7 @@ export const WorkspaceGrid: FC = () => (
         <h4 class="sidebar-heading">On This Page</h4>
         <ul id="subsection-links" class="subsection-list" />
       </div>
-      <h4 id="sidebar-heading" class="sidebar-heading">Comments</h4>
+      <h4 id="sidebar-heading" class="sidebar-heading">💬 Comments</h4>
       <div id="comment-stream" class="comment-stream">
         <div id="comment-list"></div>
         <div id="comment-composer"></div>

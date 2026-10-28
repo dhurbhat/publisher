@@ -125,6 +125,11 @@ body {
     background: #ffffff;
     overflow-y: auto;
     padding: 24px 16px;
+    transition: margin-right 0.3s ease;
+}
+
+.right-sidebar.collapsed {
+    margin-right: -320px;
 }
 
 .right-sidebar h4 {
@@ -581,6 +586,52 @@ body.hide-revisions .rev-comment {
 .modal-actions button:hover { filter: brightness(0.95); }  
   
 #approve-result { min-height: 1.2em; margin-bottom: 12px; }
+
+/* --- Responsive: tablet / iPad portrait (≤1024px) --- */  
+@media (max-width: 1024px) {  
+    .left-sidebar {  
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 15;  
+        height: 100%;
+        margin-left: 0;
+        box-shadow: 4px 0 12px rgba(0,0,0,0.1);  
+    }  
+    .left-sidebar.collapsed { margin-left: -260px; }  
+    .left-sidebar.open { margin-left: 0; }  
+  
+    .right-sidebar {  
+        width: 240px;          /* slimmer comments panel */  
+        padding: 16px 12px;  
+    }  
+    .main-reader { padding: 24px 20px; }  
+}  
+  
+/* --- Phones / very narrow (≤700px): single column, comments stack below --- */  
+@media (max-width: 700px) {  
+    .workspace-container { flex-direction: column; overflow-y: auto; }  
+    .right-sidebar {
+        position: absolute;
+        right:0;
+        z-index: 15;
+        height: 100%;
+        margin-right: 0;
+        width: 100%;
+        box-shadow: -4px 0 12px rgba(0,0,0,0.1);
+        /* border-left: none;  
+        border-top: 1px solid #e5e7eb;   */
+    }
+    .right-sidebar.collapsed { margin-right: -320px;}
+    .main-reader { padding: 20px 14px; flex: none; }  
+    .comment-stream { max-height: none; }  
+    .novel-title { font-size: 0.95rem; }   /* toolbar fits */  
+}  
+  
+/* Side-by-side diff panes stack vertically on narrow screens */  
+@media (max-width: 900px) {  
+    .diff-split { grid-template-columns: 1fr; }  
+}
 
 /* --- Side-by-side version diff --- */  
 /* .diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }  
