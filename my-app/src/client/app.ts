@@ -18,6 +18,7 @@ import { CommentRow } from '../worker/routes/chapter.js'
 import { LinkClaimResponseSchema, LinkLookupResponseSchema } from '../shared/schemas.js'
 import { Delegation } from 'iso-ucan/delegation'
 import { diffWordsWithSpace } from 'diff'
+import { version } from 'node:os'
 
 const verifierResolver = new Resolver({ ...EdDSA.verifier })
 let selectedSentenceId: number | null = null
@@ -63,10 +64,10 @@ async function loadChapter(signer: EdDSASigner, authorDid: string, email: string
         exp: Math.floor(Date.now() / 1000) + 300,
         verifierResolver,
     })
-    const { text, comments } = await postInvocation<{ text: string, comments: CommentRow[] }>(
+    const { text, comments, version, hasDiff } = await postInvocation<{ text: string, comments: CommentRow[], hasDiff: boolean, version: number }>(
         `/api/chapters/${slug}`, invocation.bytes
     )
-    return { text, comments }
+    return { text, comments, version, hasDiff }
 }
 
 async function loadChapterDiff(signer: EdDSASigner, authorDid: string, email: string, slug: string) {
@@ -84,7 +85,65 @@ async function loadChapterDiff(signer: EdDSASigner, authorDid: string, email: st
     }>(`/api/chapters/${slug}/diff`, invocation.bytes)
 }
 
-function renderDiffView(oldText: string, newText: string, oldV: number, newV: number) {
+/*function renderDiffViewInline(oldText: string, newText: string, oldV: number, newV: number) {  
+    const canvas = document.getElementById('text-canvas')!  
+  
+    const html = diffWordsWithSpace(oldText, newText).map(p => {  
+        const mark = p.added ? 'ins' : p.removed ? 'del' : null  
+  
+        // Pull leading/trailing whitespace OUT of the mark — a '\n' inside  
+        // a changed token must render as plain text, not a marked blank line.  
+        const m = mark ? p.value.match(/^(\s*)([\s\S]*?)(\s*)$/)! : null  
+        const prefix = mark ? m![1] : ''  
+        const suffix = mark ? m![3] : ''  
+        const content = mark ? m![2] : p.value  
+  
+        const body = content.split('\n').map(line => {  
+            const h = line.match(/^(#{1,3})\s+(.*)$/)  
+            const inner = mark  
+                ? `<${mark} class="rev-${mark}">${esc(h ? h[2] : line)}</${mark}>`  
+                : esc(h ? h[2] : line)  
+            if (h) {  
+                const level = h[1].length  
+                const cls = level === 1 ? 'title' : level === 2 ? 'section' : 'subsection'  
+                return `<h${level} class="manuscript-${cls}">${inner}</h${level}>`  
+            }  
+            return line.trim() ? inner : ''          // blank line → ''  
+        }).join('\n')  
+  
+        return prefix + body + suffix  
+    }).join('')  
+  
+    canvas.innerHTML = `  
+        <div class="diff-vertical manuscript-body">  
+            <div class="diff-tag">v${oldV} → v${newV}  
+                &nbsp;·&nbsp;<a href="#" id="exit-diff">exit diff</a></div>  
+            <div class="diff-raw">${html}</div>  
+        </div>`  
+  
+    document.getElementById('exit-diff')!.addEventListener('click', (e) => {  
+        e.preventDefault()  
+        renderChapterText(newText, currComments)  
+    })  
+}*/
+
+function renderDiffViewInlineOrig(oldText: string, newText: string, oldV: number, newV: number) {  
+    const canvas = document.getElementById('text-canvas')!  
+    const inline = diffWordsWithSpace(oldText, newText).map(p =>  
+        p.added   ? `<ins class="rev-ins">${esc(p.value)}</ins>`  
+        : p.removed ? `<del class="rev-del">${esc(p.value)}</del>`  
+        : esc(p.value)  
+    ).join('')  
+    canvas.innerHTML = `  
+      <div class="diff-vertical">  
+        <div class="diff-tag">v${oldV} → v${newV}</div>  
+        <div class="diff-raw">${inline}</div>  
+      </div>`  
+    document.getElementById('rev-legend')?.classList.remove('hidden')  
+    document.getElementById('toggle-revisions')?.classList.remove('hidden')  
+}
+
+/*function renderSplitDiffView(oldText: string, newText: string, oldV: number, newV: number) {
     const canvas = document.getElementById('text-canvas')!
     const inlineDiff = diffWordsWithSpace(oldText, newText).map(p =>
         p.added ? `<ins class="rev-ins">${esc(p.value)}</ins>`
@@ -99,7 +158,7 @@ function renderDiffView(oldText: string, newText: string, oldV: number, newV: nu
     // reuse the existing legend — diff uses the same .rev-ins/.rev-del classes  
     document.getElementById('rev-legend')?.classList.remove('hidden')
     document.getElementById('toggle-revisions')?.classList.remove('hidden')
-}
+}*/
 
 document.addEventListener('DOMContentLoaded', async () => {
     // console.log('[app] DOMContentLoaded fired')
@@ -135,7 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!activeChapterSlug) return
             try {
                 const d = await loadChapterDiff(signer, authorDid, email, activeChapterSlug)
-                renderDiffView(d.oldText, d.newText, d.oldVersion, d.newVersion)
+                renderDiffViewInlineOrig(d.oldText, d.newText, d.oldVersion, d.newVersion)
             } catch (e: any) {
                 showError(e.message) // e.g. "only one version exists"  
             }
@@ -144,17 +203,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const chapters = await loadChapters(signer, authorDid, email)
         renderChapterList(chapters, (slug) => {
             loadChapter(signer, authorDid, email, slug)
-                .then(({ text, comments }) => renderChapterText(text, comments))
+                .then(({ text, comments, version, hasDiff }) => {
+                    currComments = comments
+                    renderChapterText(text, comments)
+                    document.getElementById('compare-versions')?.classList.toggle('hidden', !hasDiff)
+                })
                 .catch((err) => showError(err.message))
         })
 
         if (chapters.length > 0) {
             const canvas = document.getElementById('text-canvas')!
             canvas.innerHTML = '<p style="color: #6b7280; text-align: center;">Securely loading chapter...</p>';
-            const { text, comments } = await loadChapter(signer, authorDid, email, chapters[0].name)
+            const { text, comments, hasDiff } = await loadChapter(signer, authorDid, email, chapters[0].name)
             currComments = comments
             // console.log('[app] comments received=', comments)
             renderChapterText(text, comments)
+            document.getElementById('compare-versions')?.classList.toggle('hidden', !hasDiff)
         }
     } catch (err) {
         console.error('Hydration error:', err)

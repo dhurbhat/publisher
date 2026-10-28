@@ -7,7 +7,7 @@ interface ChapterEntry { slug: string, title: string, scenes: SceneEntry[] }
 
 function kvPut(key: string, source: { path?: string, value?: string }, destinationFlag: string) {
   const src = source.path !== undefined ? `--path="${source.path}"` : `"${source.value}"`
-  execSync(`npx wrangler kv key put "${key} ${src} --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'ignore' })
+  execSync(`npx wrangler kv key put "${key}" ${src} --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'ignore' })
 }
 
 function compileAndPublish() {
@@ -86,15 +86,23 @@ function compileAndPublish() {
     for (const file of mdFiles) {
       const rawFileName = path.basename(file, '.md')
       // Strip sorting prefix from the scene section filename for a clean header
-      const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '')
+      const cleanSceneTitle = rawFileName.replace(/^\d+[\s_.-]*/, '').trim()
       const sceneSlug = cleanSceneTitle.toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '')
       const sourceText = fs.readFileSync(path.join(folderPath, file), 'utf8').trim()
       const sourceLines = sourceText.split(/\r?\n/)
-      const fileText = sourceLines[0].trim().toLowerCase() === `# ${chapterTitle.toLowerCase()}`
-        ? sourceLines.slice(1).join('\n').trim()
-        : sourceText
+
+      const norm = (s: string) => s.replace(/^#+\s*/, '').trim().toLowerCase()
+      const titles = new Set([norm(chapterTitle), norm(cleanSceneTitle)])
+      let li = 0
+      // drop leading lines that restate chapter OR scene title, with or without '#'  
+      while (li < sourceLines.length && sourceLines[li].trim() &&
+        titles.has(norm(sourceLines[li]))) {
+        li++
+      }
+      const fileText = sourceLines.slice(li).join('\n').trim()
+
       const sceneTempPath = path.join(tempDir, `${cleanSlug}--${sceneSlug}.txt`)
       fs.writeFileSync(sceneTempPath, fileText, 'utf8')
       const key = `v${version}/${cleanSlug}/${sceneSlug}`

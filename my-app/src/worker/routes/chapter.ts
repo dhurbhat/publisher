@@ -70,11 +70,13 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
             if (text === null) {
                 return c.json({ error: 'chapter not found' }, 404)
             }
+            const prevText = v > 1 ? await loadChapterText(c.env.NOVEL_TEXT_KV, v-1, slug) : null
+            const hasDiff = prevText !== null && prevText !== text
             const resultSet = await c.env.DB.prepare(
                 `SELECT sentence_id, feedback, created_at FROM feedback WHERE chapter_slug = ? AND reader_did = ? ORDER BY sentence_id`
             ).bind(args.slug, args.reviewerDid).all<CommentRow>()
 
-            return c.json({ slug, version: v, text, comments: resultSet.results })
+            return c.json({ slug, version: v, text, hasDiff, comments: resultSet.results })
         }
     )
 
