@@ -5,6 +5,24 @@ import { execSync } from 'child_process'
 interface SceneEntry { slug: string, title: string }
 interface ChapterEntry { slug: string, title: string, scenes: SceneEntry[] }
 
+const USAGE = `  
+👉 Usage: npx tsx publish.ts <path-to-Manuscript> [options]  
+  
+Arguments:  
+  <path-to-Manuscript>   Root folder containing numbered chapter folders  
+                         (e.g. "01 The Opening/") with numbered scene .md files.  
+  
+Options:  
+  --remote               Write to production KV (NOVEL_TEXT_KV).  
+                         Default is --local (wrangler dev preview namespace).  
+  --update-latest        Overwrite the current latest version in place instead  
+                         of creating v{n+1}. Requires meta:latest >= v2, since  
+                         v-1 must survive as the diff/rollback baseline.  
+  --help, -h             Show this message.  
+`
+const KNOWN = new Set(['--remote', '--update-latest', '--help', '-h'])
+
+
 function kvPut(key: string, source: { path?: string, value?: string }, destinationFlag: string) {
   const src = source.path !== undefined ? `--path="${source.path}"` : `"${source.value}"`
   execSync(`npx wrangler kv key put "${key}" ${src} --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'ignore' })
@@ -12,31 +30,52 @@ function kvPut(key: string, source: { path?: string, value?: string }, destinati
 
 function compileAndPublish() {
   const args = process.argv.slice(2)
-  const targetPath = args[0]
+  const targetPath = args.find(a => !a.startsWith('-'))
   const isRemote = args.includes('--remote')
+  const updatedLatest = args.includes('--update-latest')
+
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(USAGE)
+    process.exit(0)
+  }
+  const unknown = args.filter(a => a.startsWith('-') && !KNOWN.has(a))
+  if (unknown.length) {
+    console.error(`\n❌ Unknown flag(s): ${unknown.join(', ')}\n${USAGE}`)
+    process.exit(1)
+  }
 
   if (!targetPath) {
-    console.log('\n❌ Error: Missing target directory path.')
-    console.log('👉 Usage: npx tsx publish-chapter.ts <path-to-Manuscript> [--remote]\n')
+    console.error('\n❌ Error: Missing target directory path.')
+    console.log(USAGE)
     process.exit(1)
   }
 
   const resolvedPath = path.resolve(targetPath)
   if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) {
     console.error(`\n❌ Error: Manuscript directory not found at "${targetPath}"\n`)
+    console.log(USAGE)
     process.exit(1)
   }
 
   const destinationFlag = isRemote ? '--remote' : '--local'
   let version = 1
+  let existing = 0
+
   try {
     const out = execSync(`npx wrangler kv key get "meta:latest" --binding=NOVEL_TEXT_KV ${destinationFlag}`,
-      { encoding: 'utf-8' }
-    ).trim()
-    version = (parseInt(out, 10) || 0) + 1
+      { encoding: 'utf-8' }).trim()
+    existing = parseInt(out, 10) || 0
+    version = updatedLatest ? existing : existing + 1
   } catch {
     console.log(`--> No original version number found. Resetting to ${version}`)
   }
+
+  if (updatedLatest && existing < 2) {
+    console.error(`\n❌ --update-latest needs latest >= v2 (found v${existing}).`)
+    console.error('👉 Publish a new version first, or drop the flag.\n')
+    process.exit(1)
+  }
+  console.log(updatedLatest ? 'Updating latest' + ` version ${version}` : 'Creating new' + ` version ${version}`);
 
   const manuscriptEntries = fs.readdirSync(resolvedPath, { withFileTypes: true })
   const chapterFolders = manuscriptEntries

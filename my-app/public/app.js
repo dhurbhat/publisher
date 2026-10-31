@@ -15198,7 +15198,7 @@ function renderDiffViewInlineOrig(oldText, newText, oldV, newV) {
   canvas.innerHTML = `  
       <div class="diff-vertical">  
         <div class="diff-tag">v${oldV} \u2192 v${newV}</div>  
-        <div class="diff-raw">${inline}</div>  
+        <div class="diff-raw">${inline}</div>
       </div>`;
   document.getElementById("rev-legend")?.classList.remove("hidden");
   document.getElementById("toggle-revisions")?.classList.remove("hidden");
@@ -15222,6 +15222,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (span)
         selectSentence(span, Number(span.dataset.id));
     });
+    document.getElementById("toggle-toc").addEventListener("click", () => {
+      document.getElementById("left-sidebar").classList.toggle("collapsed");
+      console.log(`[app] left-sidebar ${document.getElementById("left-sidebar").classList.toString()}`);
+    });
+    document.getElementById("toggle-comments").addEventListener("click", () => {
+      document.getElementById("right-sidebar").classList.toggle("collapsed");
+    });
+    if (window.matchMedia("(max-width: 700px").matches) {
+      document.getElementById("right-sidebar").classList.toggle("collapsed");
+    }
     document.getElementById("toggle-revisions").addEventListener("click", (e) => {
       const hiding = document.body.classList.toggle("hide-revisions");
       e.currentTarget.textContent = hiding ? "Show changes" : "Hide changes";
@@ -15553,6 +15563,7 @@ function selectSentence(element, id) {
     <textarea id="feedback-note" style="width: 100%; height: 120px; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; margin-bottom: 12px; resize: none;" placeholder="Type your edits or critiques here...">${comment ? comment.feedback : ""}</textarea>
     <button style="width: 100%; background: #111827; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">Save Review Note</button>
   `;
+  document.getElementById("right-sidebar").classList.remove("collapsed");
   panel.querySelector("button:last-of-type").addEventListener("click", () => submitLineNote(selectedSentenceId));
   document.getElementById("close-composer").addEventListener("click", (e) => {
     e.preventDefault();
