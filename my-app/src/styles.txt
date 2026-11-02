@@ -51,7 +51,37 @@ body {
     font-weight: 600;
     font-size: 1.1rem;
     margin-left: auto;
-    margin-right: auto;
+    /* margin-right: auto; */
+}
+
+.draft-version {  
+    margin-right: -8px;          /* absorbs the free space, keeping title+version centered */  
+    margin-left: auto;           /* tighter than the toolbar's 16px gap, optional */  
+    font-size: 0.85rem;  
+    font-weight: 500;  
+    color: var(--text-muted);
+    /* font-family: ui-monospace, monospace;   */
+}
+
+.badge-status {  
+    font-size: 0.78rem;  
+    font-weight: 500;  
+    color: var(--text-muted);  
+    border: 1px solid var(--border-color);  
+    border-radius: 999px;  
+    padding: 3px 10px;  
+    background: var(--bg-color);  
+    white-space: nowrap;  
+}  
+  
+.badge-inactive {  
+    color: var(--status-inactive);  
+    border-color: rgba(239, 68, 68, 0.4);  
+}  
+  
+.badge-active {  
+    color: var(--status-active);  
+    border-color: rgba(16, 185, 129, 0.4);  
 }
 
 .workspace-container {
@@ -315,7 +345,7 @@ button[type="submit"] {
     margin-top: 1rem;
     padding: 0.75rem;
     border-radius: 6px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .status.error {

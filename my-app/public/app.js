@@ -15156,11 +15156,11 @@ async function loadChapters(signer, authorDid, email3) {
     exp: Math.floor(Date.now() / 1e3) + 300,
     verifierResolver
   });
-  const { chapters } = await postInvocation(
+  const { chapters, version: version2 } = await postInvocation(
     "/api/chapters",
     invocation.bytes
   );
-  return chapters;
+  return { chapters, version: version2 };
 }
 async function loadChapter(signer, authorDid, email3, slug) {
   activeChapterSlug = slug;
@@ -15245,9 +15245,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         showError(e.message);
       }
     });
-    const chapters = await loadChapters(signer, authorDid, email3);
+    const { chapters, version: version2 } = await loadChapters(signer, authorDid, email3);
+    document.getElementById("draft-version").innerHTML = `Version: ${version2}`;
     renderChapterList(chapters, (slug) => {
-      loadChapter(signer, authorDid, email3, slug).then(({ text, comments, version: version2, hasDiff }) => {
+      loadChapter(signer, authorDid, email3, slug).then(({ text, comments, version: version3, hasDiff }) => {
         currComments = comments;
         renderChapterText(text, comments);
         document.getElementById("compare-versions")?.classList.toggle("hidden", !hasDiff);

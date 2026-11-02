@@ -15,6 +15,7 @@ export const TopToolbar: FC = () => (
   <header class="toolbar">
     <button id="toggle-toc" class="btn-toc">☰ Chapters</button>
     <div class="novel-title">First Murder in 200 Years</div>
+    <div class="draft-version" id="draft-version"></div>
     <button id="toggle-revisions" class="btn-toc hidden">Hide changes</button>
     <button id="compare-versions" class="btn-toc hidden">Compare Versions</button>
     <div id="token-status-badge" class="badge-status badge-inactive">No Access Token</div> | 

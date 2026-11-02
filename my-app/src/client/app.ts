@@ -46,10 +46,10 @@ async function loadChapters(signer: EdDSASigner, authorDid: string, email: strin
         exp: Math.floor(Date.now() / 1000) + 300,
         verifierResolver,
     })
-    const { chapters } = await postInvocation<{ chapters: { name: string }[] }>(
+    const { chapters, version } = await postInvocation<{ chapters: { name: string }[], version: string }>(
         '/api/chapters', invocation.bytes
     )
-    return chapters
+    return {chapters, version}
 }
 
 async function loadChapter(signer: EdDSASigner, authorDid: string, email: string, slug: string) {
@@ -150,7 +150,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         })
 
-        const chapters = await loadChapters(signer, authorDid, email)
+        const {chapters, version} = await loadChapters(signer, authorDid, email)
+        document.getElementById('draft-version')!.innerHTML = `Version: ${version}`
         renderChapterList(chapters, (slug) => {
             loadChapter(signer, authorDid, email, slug)
                 .then(({ text, comments, version, hasDiff }) => {
