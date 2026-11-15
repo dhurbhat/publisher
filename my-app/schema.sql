@@ -8,3 +8,5 @@ CREATE TABLE feedback (
     sentence_text TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE feedback ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0;  
+ALTER TABLE feedback ADD COLUMN reviewed_at DATETIME;

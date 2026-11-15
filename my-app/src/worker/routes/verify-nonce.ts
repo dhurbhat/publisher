@@ -27,16 +27,29 @@ export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
         // Consume the nonce so it can't be replayed.  
         await c.env.READER_SESSION_KV.delete(`invite:${nonce}`)
 
+        const workerSigner = await EdDSASigner.import(c.env.WORKER_PRIVATE_KEY)
+        const authorDid = parse(c.env.AUTHOR_DID).did
+        const receivedReviewerDID = parse(reviewerDid).did
+
+        // if this email was invited as the author, record their browser DID.  
+        // feedback review routes gate on this value.  
+        const authorEmail = await c.env.READER_SESSION_KV.get('author:email')  
+        if (authorEmail && authorEmail === reviewerEmail) {  
+            const existing = await c.env.READER_SESSION_KV.get('author:dids')  
+            const dids: string[] = existing ? JSON.parse(existing) : []  
+            if (!dids.includes(receivedReviewerDID)) {  
+                dids.push(receivedReviewerDID)  
+                await c.env.READER_SESSION_KV.put('author:dids', JSON.stringify(dids))  
+                console.log(`[api] recorded author DID ${receivedReviewerDID}`)  
+            }  
+        }
+
         // 5b) persistent, KV-backed Store (every delegation ever minted lives here)  
         const store = new Store(new CloudflareUcanStore(c.env.UCAN_STORE_KV))
         // 5b1) Add the out-of-band A->W delegation so proofs can be derived
         const awDelegation = await Delegation.fromString(c.env.AUTHOR_WORKER_DELEGATION)
         await store.add([awDelegation]) // << OK to do this on each nonce verification as the 
         console.log(`[api] wrote ${awDelegation.cid.toString()} to UCAN STORE`)
-
-        const workerSigner = await EdDSASigner.import(c.env.WORKER_PRIVATE_KEY)
-        const authorDid = parse(c.env.AUTHOR_DID).did
-        const receivedReviewerDID = parse(reviewerDid).did
 
         // 5c) mint Worker -> Reviewer, rooted at Author (sub = authorDid).  
         // cmd is the *parent* '/chapter' so it covers list + read.  
@@ -91,7 +104,17 @@ export function registerSessionRoutes(app: Hono<{ Bindings: Bindings }>) {
         const store = new Store(new CloudflareUcanStore(c.env.UCAN_STORE_KV))
         const awDelegation = await Delegation.fromString(c.env.AUTHOR_WORKER_DELEGATION)
         
-        await store.add([awDelegation, pd, d])   // seed A->W (as in verify-nonce) + R1->R2  
+        await store.add([awDelegation, pd, d])   // seed A->W (as in verify-nonce) + R1->R2
+                // if the linking session belongs to the author, trust the new DID too  
+        const authorEmail = await c.env.READER_SESSION_KV.get('author:email')  
+        if (authorEmail && authorEmail === email) {  
+            const existing = await c.env.READER_SESSION_KV.get('author:dids')  
+            const dids: string[] = existing ? JSON.parse(existing) : []  
+            if (!dids.includes(did)) {  
+                dids.push(did)  
+                await c.env.READER_SESSION_KV.put('author:dids', JSON.stringify(dids))  
+            }  
+        }
         await c.env.READER_SESSION_KV.put(`linkgrant:${did}`,
             JSON.stringify({ token, parentToken: parentDelegation, email }), { expirationTtl: 300 })
         await c.env.READER_SESSION_KV.delete(`linkcode:${(await c.env.READER_SESSION_KV

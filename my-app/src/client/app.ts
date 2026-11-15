@@ -15,6 +15,8 @@ import { LinkClaimResponseSchema, LinkLookupResponseSchema } from '../shared/sch
 import { diffWordsWithSpace } from 'diff'
 import { Capability } from 'iso-ucan/capability'
 import { z } from 'zod'
+import { ChapterFeedbackListCap, ChapterFeedbackResolveCap } from '../shared/chapter-cap.js'
+import type { FeedbackRow } from '../worker/routes/feedback.js'
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const verifierResolver = new Resolver({ ...EdDSA.verifier })
@@ -23,6 +25,9 @@ const expIn = (s: number) => Math.floor(Date.now() / 1000) + s
 let selectedSentenceId: number | null = null
 let activeChapterSlug: string | null = null
 let currComments: CommentRow[] = []
+let isAuthor = false
+let reviewQueue: FeedbackRow[] = []
+let reviewIdx = -1
 
 // ---------- API ----------  
 async function postInvocation<T = unknown>(url: string, bytes: Uint8Array): Promise<T> {
@@ -72,6 +77,15 @@ async function loadChapterDiff(signer: EdDSASigner, authorDid: string, email: st
         `/api/chapters/${slug}/diff`, inv.bytes)
 }
 
+async function loadFeedbackQueue(signer: EdDSASigner, authorDid: string, email: string) {
+    const inv = await invoke(ChapterFeedbackListCap, signer, authorDid, { email })
+    return postInvocation<{ feedback: FeedbackRow[] }>('/api/feedback/list', inv.bytes)
+}
+
+async function resolveFeedback(signer: EdDSASigner, authorDid: string, email: string, id: number) {
+    const inv = await invoke(ChapterFeedbackResolveCap, signer, authorDid, { email, feedbackId: id })
+    return postInvocation<{ ok: boolean }>('/api/feedback/resolve', inv.bytes)
+}
 // ---------- inline markup ----------  
 const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -130,90 +144,90 @@ function parseSentencesIntoSpans(text: string) {
 }
 
 // ---------- diff view (markdown-aware) ----------  
-function renderDiffView(oldText: string, newText: string, oldV: number, newV: number) {  
+function renderDiffView(oldText: string, newText: string, oldV: number, newV: number) {
     // accumulate per-line HTML; newline in a token flushes the line buffer  
-    const lines: string[] = []  
-    let buf = ''  
-  
-    const flush = () => {  
-        const line = buf; buf = ''  
-        if (!line.trim()) { lines.push(''); return }  
+    const lines: string[] = []
+    let buf = ''
+
+    const flush = () => {
+        const line = buf; buf = ''
+        if (!line.trim()) { lines.push(''); return }
         // header detection must look at raw text — but buf is HTML now.  
         // simplest: check if line starts with an <h> we already emitted? No —  
         // we detect '#' before marks are added, below.  
-        lines.push(line)  
-    }  
-  
+        lines.push(line)
+    }
+
     // We need the line's raw text to detect headers, so buffer raw + mark pairs.  
-    const segs: { text: string; mark: 'ins' | 'del' | null }[] = []  
-    let rawLine = ''  
-  
-    const emitLine = () => {  
-        const raw = rawLine.trim(); rawLine = ''  
-        const h = raw.match(HEADER)  
-        const inner = segs.splice(0).map(s =>  
-            s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)  
-        ).join('')  
-        if (!raw) { lines.push(''); return }  
-        if (h) lines.push(headerHtml(h[1].length, inner.replace(/^#+\s*/, '')))  
-        else lines.push(`<p class="diff-para">${inner}</p>`)  
-    }  
-  
+    const segs: { text: string; mark: 'ins' | 'del' | null }[] = []
+    let rawLine = ''
+
+    const emitLine = () => {
+        const raw = rawLine.trim(); rawLine = ''
+        const h = raw.match(HEADER)
+        const inner = segs.splice(0).map(s =>
+            s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)
+        ).join('')
+        if (!raw) { lines.push(''); return }
+        if (h) lines.push(headerHtml(h[1].length, inner.replace(/^#+\s*/, '')))
+        else lines.push(`<p class="diff-para">${inner}</p>`)
+    }
+
     // but inner HTML for header must be computed from text minus '# ' prefix  
     // simpler: rebuild segs with the prefix stripped on emit  
-    const emitLine2 = () => {  
-        const raw = rawLine; rawLine = ''  
-        const parts = segs.splice(0)  
-        const h = raw.trim().match(HEADER)  
-        if (h) {  
+    const emitLine2 = () => {
+        const raw = rawLine; rawLine = ''
+        const parts = segs.splice(0)
+        const h = raw.trim().match(HEADER)
+        if (h) {
             // strip the leading '# ' from the first matching segment's text  
-            let prefix = raw.trimStart().match(/^#{1,3}\s+/)![0]  
-            const inner = parts.map(s => {  
-                let t = s.text  
-                if (prefix && t.startsWith(prefix.slice(0, t.length))) {  
-                    const n = Math.min(t.length, prefix.length)  
-                    t = t.slice(n); prefix = prefix.slice(n)  
-                }  
-                const e = esc(t)  
-                return s.mark ? `<${s.mark} class="rev-${s.mark}">${e}</${s.mark}>` : e  
-            }).join('')  
-            lines.push(headerHtml(h[1].length, inner))  
-        } else if (raw.trim()) {  
-            const inner = parts.map(s =>  
-                s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)  
-            ).join('')  
-            lines.push(`<p class="diff-para">${inner}</p>`)  
-        } else {  
-            lines.push('')  
-        }  
-    }  
-  
-    for (const t of diffWordsWithSpace(oldText, newText)) {  
-        const mark = t.added ? 'ins' as const : t.removed ? 'del' as const : null  
-        const pieces = t.value.split('\n')  
-        pieces.forEach((piece, i) => {  
+            let prefix = raw.trimStart().match(/^#{1,3}\s+/)![0]
+            const inner = parts.map(s => {
+                let t = s.text
+                if (prefix && t.startsWith(prefix.slice(0, t.length))) {
+                    const n = Math.min(t.length, prefix.length)
+                    t = t.slice(n); prefix = prefix.slice(n)
+                }
+                const e = esc(t)
+                return s.mark ? `<${s.mark} class="rev-${s.mark}">${e}</${s.mark}>` : e
+            }).join('')
+            lines.push(headerHtml(h[1].length, inner))
+        } else if (raw.trim()) {
+            const inner = parts.map(s =>
+                s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)
+            ).join('')
+            lines.push(`<p class="diff-para">${inner}</p>`)
+        } else {
+            lines.push('')
+        }
+    }
+
+    for (const t of diffWordsWithSpace(oldText, newText)) {
+        const mark = t.added ? 'ins' as const : t.removed ? 'del' as const : null
+        const pieces = t.value.split('\n')
+        pieces.forEach((piece, i) => {
             if (i > 0) emitLine2()          // newline → flush current line  
             if (piece) {                    // keep inline marks inside the line  
-                segs.push({ text: piece, mark })  
-                rawLine += piece  
-            }  
-        })  
-    }  
+                segs.push({ text: piece, mark })
+                rawLine += piece
+            }
+        })
+    }
     emitLine2()                             // last line has no trailing \n  
-  
+
     $('text-canvas').innerHTML = `  
       <div class="diff-vertical manuscript-body">  
         <div class="diff-tag">v${oldV} → v${newV}  
           &nbsp;·&nbsp;<a href="#" id="exit-diff">exit diff</a></div>  
         ${lines.join('\n')}  
-      </div>`  
-  
-    $('exit-diff').addEventListener('click', e => {  
-        e.preventDefault()  
-        renderChapterText(newText, currComments)  
-    })  
-    buildSubsectionNavigation()  
-    resetRevisions()  
+      </div>`
+
+    $('exit-diff').addEventListener('click', e => {
+        e.preventDefault()
+        renderChapterText(newText, currComments)
+    })
+    buildSubsectionNavigation()
+    resetRevisions()
 }
 
 function updateRevisionUI() {
@@ -264,6 +278,79 @@ function renderComments(comments: CommentRow[]) {
 
 function markCommentedSentences(comments: CommentRow[]) {
     for (const c of comments) sentenceSpan(c.sentence_id)?.classList.add('has-comment')
+}
+// ---------- Review UI block -------------
+function renderReviewQueue() {  
+    const stream = $('comment-list')  
+    const pending = reviewQueue.filter(f => !f.reviewed)  
+    stream.innerHTML = `  
+      <div class="review-header" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">  
+        <strong>${pending.length} unreviewed</strong>  
+        <button id="review-prev" style="flex:1;">← Prev</button>  
+        <button id="review-next" style="flex:1;">Next →</button>  
+      </div>`  
+    for (const f of reviewQueue) {  
+        const item = document.createElement('div')  
+        item.className = 'comment-card' + (f.reviewed ? ' comment-stale' : '')  
+        item.innerHTML = `  
+          <span class="comment-ref">${esc(f.chapter_slug)} ¶${f.sentence_id}  
+            · ${esc(f.reader_did.slice(8, 20))}…${f.reviewed ? ' · ✓' : ''}</span>  
+          <p>${esc(f.feedback)}</p>  
+          ${f.sentence_text ? `<small class="stale-ctx">on: "${esc(f.sentence_text.slice(0, 80))}…"</small>` : ''}`  
+        item.addEventListener('click', () => jumpToFeedback(f))  
+        stream.appendChild(item)  
+    }  
+    $('review-prev').onclick = () => stepReview(-1)  
+    $('review-next').onclick = () => stepReview(1)  
+}  
+  
+async function jumpToFeedback(f: FeedbackRow) {  
+    reviewIdx = reviewQueue.indexOf(f)  
+    const [signer, authorDid, email] =  
+        await Promise.all([getExistingSigner(), getAuthorDid(), getReviewerEmail()])  
+    if (f.chapter_slug !== activeChapterSlug) {  
+        const { text, comments, hasDiff } = await loadChapter(signer, authorDid, email, f.chapter_slug)  
+        currComments = comments  
+        renderChapterText(text, comments)  
+        $('compare-versions')?.classList.toggle('hidden', !hasDiff)  
+        renderReviewQueue()  
+    }  
+    const span = sentenceSpan(f.sentence_id)  
+    document.querySelectorAll('.novel-sentence').forEach(x => x.classList.remove('active-highlight'))  
+    if (span) {  
+        span.scrollIntoView({ behavior: 'smooth', block: 'center' })  
+        span.classList.add('active-highlight')  
+    }  
+    showReviewPanel(f, !span || span.textContent!.trim() !== f.sentence_text)  
+}  
+  
+function showReviewPanel(f: FeedbackRow, stale: boolean) {  
+    const panel = $('comment-composer')  
+    panel.innerHTML = `  
+    <h4 style="margin-bottom:12px;font-size:.95rem;color:#111827;">  
+      ${esc(f.chapter_slug)} ¶${f.sentence_id}${stale ? ' · <span style="color:#b91c1c">stale</span>' : ''}  
+    </h4>  
+    <p style="margin-bottom:8px;">${esc(f.feedback)}</p>  
+    ${f.sentence_text ? `<small class="stale-ctx">on: "${esc(f.sentence_text.slice(0, 120))}…"</small>` : ''}  
+    <button id="review-resolve" style="width:100%;margin-top:12px;background:${f.reviewed ? '#6b7280' : '#111827'};color:white;padding:10px;border:none;border-radius:6px;font-weight:500;cursor:pointer;">  
+      ${f.reviewed ? 'Reopen' : 'Mark addressed ✓'}</button>`  
+    $('right-sidebar').classList.remove('collapsed')  
+    $('review-resolve').addEventListener('click', async () => {  
+        const [signer, authorDid, email] =  
+            await Promise.all([getExistingSigner(), getAuthorDid(), getReviewerEmail()])  
+        await resolveFeedback(signer, authorDid, email, f.id)  
+        f.reviewed = f.reviewed ? 0 : 1  
+        renderReviewQueue()  
+        stepReview(1)  
+    })  
+}  
+  
+function stepReview(dir: 1 | -1) {  
+    const pending = reviewQueue.filter(f => !f.reviewed)  
+    if (!pending.length) return  
+    const cur = pending.indexOf(reviewQueue[reviewIdx])  
+    const next = pending[(cur + dir + pending.length) % pending.length]  
+    jumpToFeedback(next)  
 }
 
 // ---------- nav / chapter view ----------  
@@ -594,6 +681,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             currComments = comments
             renderChapterText(text, comments)
             $('compare-versions')?.classList.toggle('hidden', !hasDiff)
+        }
+                // author gets a "Review feedback" button; reviewers get 403 → skipped  
+        try {  
+            const { feedback } = await loadFeedbackQueue(signer, authorDid, email)
+            console.log(`[api] feedback received: ${feedback}`)
+            isAuthor = true  
+            reviewQueue = feedback  
+            const btn = document.createElement('button')  
+            btn.id = 'review-mode'  
+            btn.textContent = `Review feedback (${feedback.filter(f => !f.reviewed).length})`  
+            btn.style.cssText = 'margin-left:8px;padding:4px 10px;'  
+            $('compare-versions')!.after(btn)  
+            btn.addEventListener('click', () => {  
+                renderReviewQueue()  
+                if (reviewQueue.some(f => !f.reviewed)) stepReview(1)  
+            })  
+        } catch {  
+            // 403 → normal reviewer, no review UI  
         }
     } catch (err) {
         console.error('Hydration error:', err)

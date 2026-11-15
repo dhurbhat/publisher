@@ -14548,6 +14548,14 @@ var ChapterFeedbackCap = Capability.from({
   }),
   cmd: "/chapter/feedback"
 });
+var ChapterFeedbackListCap = Capability.from({
+  schema: external_exports.object({ email: external_exports.string() }),
+  cmd: "/chapter/feedback/list"
+});
+var ChapterFeedbackResolveCap = Capability.from({
+  schema: external_exports.object({ email: external_exports.string(), feedbackId: external_exports.number() }),
+  cmd: "/chapter/feedback/resolve"
+});
 
 // src/client/ucan-browser-store.ts
 import { Store } from "iso-ucan/store";
@@ -15137,6 +15145,9 @@ var expIn = (s) => Math.floor(Date.now() / 1e3) + s;
 var selectedSentenceId = null;
 var activeChapterSlug = null;
 var currComments = [];
+var isAuthor = false;
+var reviewQueue = [];
+var reviewIdx = -1;
 async function postInvocation(url2, bytes) {
   const res = await fetch(url2, {
     method: "POST",
@@ -15176,6 +15187,14 @@ async function loadChapterDiff(signer, authorDid, email3, slug) {
     `/api/chapters/${slug}/diff`,
     inv.bytes
   );
+}
+async function loadFeedbackQueue(signer, authorDid, email3) {
+  const inv = await invoke(ChapterFeedbackListCap, signer, authorDid, { email: email3 });
+  return postInvocation("/api/feedback/list", inv.bytes);
+}
+async function resolveFeedback(signer, authorDid, email3, id) {
+  const inv = await invoke(ChapterFeedbackResolveCap, signer, authorDid, { email: email3, feedbackId: id });
+  return postInvocation("/api/feedback/resolve", inv.bytes);
 }
 var esc2 = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 var CRITIC = /\{~~.*?~~\}|\{--.*?--\}|\{\+\+.*?\+\+\}|\{>>.*?<<\}/gs;
@@ -15333,6 +15352,73 @@ function renderComments(comments) {
 }
 function markCommentedSentences(comments) {
   for (const c of comments) sentenceSpan(c.sentence_id)?.classList.add("has-comment");
+}
+function renderReviewQueue() {
+  const stream = $("comment-list");
+  const pending = reviewQueue.filter((f) => !f.reviewed);
+  stream.innerHTML = `  
+      <div class="review-header" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">  
+        <strong>${pending.length} unreviewed</strong>  
+        <button id="review-prev" style="flex:1;">\u2190 Prev</button>  
+        <button id="review-next" style="flex:1;">Next \u2192</button>  
+      </div>`;
+  for (const f of reviewQueue) {
+    const item = document.createElement("div");
+    item.className = "comment-card" + (f.reviewed ? " comment-stale" : "");
+    item.innerHTML = `  
+          <span class="comment-ref">${esc2(f.chapter_slug)} \xB6${f.sentence_id}  
+            \xB7 ${esc2(f.reader_did.slice(8, 20))}\u2026${f.reviewed ? " \xB7 \u2713" : ""}</span>  
+          <p>${esc2(f.feedback)}</p>  
+          ${f.sentence_text ? `<small class="stale-ctx">on: "${esc2(f.sentence_text.slice(0, 80))}\u2026"</small>` : ""}`;
+    item.addEventListener("click", () => jumpToFeedback(f));
+    stream.appendChild(item);
+  }
+  $("review-prev").onclick = () => stepReview(-1);
+  $("review-next").onclick = () => stepReview(1);
+}
+async function jumpToFeedback(f) {
+  reviewIdx = reviewQueue.indexOf(f);
+  const [signer, authorDid, email3] = await Promise.all([getExistingSigner(), getAuthorDid(), getReviewerEmail()]);
+  if (f.chapter_slug !== activeChapterSlug) {
+    const { text, comments, hasDiff } = await loadChapter(signer, authorDid, email3, f.chapter_slug);
+    currComments = comments;
+    renderChapterText(text, comments);
+    $("compare-versions")?.classList.toggle("hidden", !hasDiff);
+    renderReviewQueue();
+  }
+  const span = sentenceSpan(f.sentence_id);
+  document.querySelectorAll(".novel-sentence").forEach((x) => x.classList.remove("active-highlight"));
+  if (span) {
+    span.scrollIntoView({ behavior: "smooth", block: "center" });
+    span.classList.add("active-highlight");
+  }
+  showReviewPanel(f, !span || span.textContent.trim() !== f.sentence_text);
+}
+function showReviewPanel(f, stale) {
+  const panel = $("comment-composer");
+  panel.innerHTML = `  
+    <h4 style="margin-bottom:12px;font-size:.95rem;color:#111827;">  
+      ${esc2(f.chapter_slug)} \xB6${f.sentence_id}${stale ? ' \xB7 <span style="color:#b91c1c">stale</span>' : ""}  
+    </h4>  
+    <p style="margin-bottom:8px;">${esc2(f.feedback)}</p>  
+    ${f.sentence_text ? `<small class="stale-ctx">on: "${esc2(f.sentence_text.slice(0, 120))}\u2026"</small>` : ""}  
+    <button id="review-resolve" style="width:100%;margin-top:12px;background:${f.reviewed ? "#6b7280" : "#111827"};color:white;padding:10px;border:none;border-radius:6px;font-weight:500;cursor:pointer;">  
+      ${f.reviewed ? "Reopen" : "Mark addressed \u2713"}</button>`;
+  $("right-sidebar").classList.remove("collapsed");
+  $("review-resolve").addEventListener("click", async () => {
+    const [signer, authorDid, email3] = await Promise.all([getExistingSigner(), getAuthorDid(), getReviewerEmail()]);
+    await resolveFeedback(signer, authorDid, email3, f.id);
+    f.reviewed = f.reviewed ? 0 : 1;
+    renderReviewQueue();
+    stepReview(1);
+  });
+}
+function stepReview(dir) {
+  const pending = reviewQueue.filter((f) => !f.reviewed);
+  if (!pending.length) return;
+  const cur = pending.indexOf(reviewQueue[reviewIdx]);
+  const next = pending[(cur + dir + pending.length) % pending.length];
+  jumpToFeedback(next);
 }
 function buildSubsectionNavigation() {
   const sections = document.querySelectorAll(".manuscript-section");
@@ -15646,6 +15732,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       currComments = comments;
       renderChapterText(text, comments);
       $("compare-versions")?.classList.toggle("hidden", !hasDiff);
+    }
+    try {
+      const { feedback } = await loadFeedbackQueue(signer, authorDid, email3);
+      console.log(`[api] feedback received: ${feedback}`);
+      isAuthor = true;
+      reviewQueue = feedback;
+      const btn = document.createElement("button");
+      btn.id = "review-mode";
+      btn.textContent = `Review feedback (${feedback.filter((f) => !f.reviewed).length})`;
+      btn.style.cssText = "margin-left:8px;padding:4px 10px;";
+      $("compare-versions").after(btn);
+      btn.addEventListener("click", () => {
+        renderReviewQueue();
+        if (reviewQueue.some((f) => !f.reviewed)) stepReview(1);
+      });
+    } catch {
     }
   } catch (err) {
     console.error("Hydration error:", err);

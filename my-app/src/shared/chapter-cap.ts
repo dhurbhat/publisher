@@ -32,3 +32,13 @@ export const ChapterFeedbackCap = Capability.from({
     }),
     cmd: '/chapter/feedback'
 })
+
+export const ChapterFeedbackListCap = Capability.from({  
+    schema: z.object({ email: z.string() }),  
+    cmd: '/chapter/feedback/list',  
+})  
+  
+export const ChapterFeedbackResolveCap = Capability.from({  
+    schema: z.object({ email: z.string(), feedbackId: z.number() }),  
+    cmd: '/chapter/feedback/resolve',  
+})
