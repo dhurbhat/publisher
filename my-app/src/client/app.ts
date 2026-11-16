@@ -131,42 +131,49 @@ function parseSentencesIntoSpans(text: string) {
 
 // ---------- diff view (markdown-aware) ----------  
 function renderDiffView(oldText: string, newText: string, oldV: number, newV: number) {  
-    // accumulate per-line HTML; newline in a token flushes the line buffer  
     const lines: string[] = []  
-    let buf = ''  
-  
-    const flush = () => {  
-        const line = buf; buf = ''  
-        if (!line.trim()) { lines.push(''); return }  
-        // header detection must look at raw text — but buf is HTML now.  
-        // simplest: check if line starts with an <h> we already emitted? No —  
-        // we detect '#' before marks are added, below.  
-        lines.push(line)  
-    }  
-  
-    // We need the line's raw text to detect headers, so buffer raw + mark pairs.  
     const segs: { text: string; mark: 'ins' | 'del' | null }[] = []  
     let rawLine = ''  
+    let rawNew = ''                                   // FIX: new-side text for sentence segmentation  
+    let sentId = 0                                    // FIX: same id sequence as parseSentencesIntoSpans  
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' })  // FIX  
   
-    const emitLine = () => {  
-        const raw = rawLine.trim(); rawLine = ''  
-        const h = raw.match(HEADER)  
-        const inner = segs.splice(0).map(s =>  
-            s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)  
-        ).join('')  
-        if (!raw) { lines.push(''); return }  
-        if (h) lines.push(headerHtml(h[1].length, inner.replace(/^#+\s*/, '')))  
-        else lines.push(`<p class="diff-para">${inner}</p>`)  
+    // FIX: wrap rendered segs in .novel-sentence spans whose data-id matches  
+    // the ids parseSentencesIntoSpans assigns to newText — so  
+    // markCommentedSentences()/sentenceSpan() keep working in diff view.  
+    const renderWithSentences = (parts: typeof segs, raw: string) => {  
+        const bounds = [...segmenter.segment(raw)]  
+            .filter(s => s.segment.trim())  
+            .map(s => s.index + s.segment.length)     // end offsets in rawNew  
+        let html = '', off = 0, bi = 0, open = false  
+        const openSpan = () => { html += `<span class="novel-sentence" data-id="${sentId++}">`; open = true }  
+        const closeSpan = () => { html += '</span>'; open = false }  
+        for (const s of parts) {  
+            let t = s.text  
+            while (t.length) {  
+                if (!open) openSpan()  
+                const isNewSide = s.mark !== 'del'    // unchanged + ins advance rawNew offset  
+                const room = isNewSide && bi < bounds.length ? bounds[bi] - off : Infinity  
+                const n = Math.min(t.length, room === Infinity ? t.length : room)  
+                const chunk = t.slice(0, n); t = t.slice(n)  
+                const e = esc(chunk)  
+                html += s.mark ? `<${s.mark} class="rev-${s.mark}">${e}</${s.mark}>` : e  
+                if (isNewSide) {  
+                    off += n  
+                    if (bi < bounds.length && off >= bounds[bi]) { closeSpan(); bi++ }  
+                }  
+            }  
+        }  
+        if (open) closeSpan()  
+        return html  
     }  
   
-    // but inner HTML for header must be computed from text minus '# ' prefix  
-    // simpler: rebuild segs with the prefix stripped on emit  
     const emitLine2 = () => {  
         const raw = rawLine; rawLine = ''  
+        const rawN = rawNew; rawNew = ''              // FIX  
         const parts = segs.splice(0)  
         const h = raw.trim().match(HEADER)  
         if (h) {  
-            // strip the leading '# ' from the first matching segment's text  
             let prefix = raw.trimStart().match(/^#{1,3}\s+/)![0]  
             const inner = parts.map(s => {  
                 let t = s.text  
@@ -177,12 +184,10 @@ function renderDiffView(oldText: string, newText: string, oldV: number, newV: nu
                 const e = esc(t)  
                 return s.mark ? `<${s.mark} class="rev-${s.mark}">${e}</${s.mark}>` : e  
             }).join('')  
-            lines.push(headerHtml(h[1].length, inner))  
+            lines.push(headerHtml(h[1].length, inner))   // headers get no sentence spans — same as parseSentencesIntoSpans  
         } else if (raw.trim()) {  
-            const inner = parts.map(s =>  
-                s.mark ? `<${s.mark} class="rev-${s.mark}">${esc(s.text)}</${s.mark}>` : esc(s.text)  
-            ).join('')  
-            lines.push(`<p class="diff-para">${inner}</p>`)  
+            // FIX: emit sentence spans instead of bare marks  
+            lines.push(`<p class="diff-para">${renderWithSentences(parts, rawN)}</p>`)  
         } else {  
             lines.push('')  
         }  
@@ -192,14 +197,15 @@ function renderDiffView(oldText: string, newText: string, oldV: number, newV: nu
         const mark = t.added ? 'ins' as const : t.removed ? 'del' as const : null  
         const pieces = t.value.split('\n')  
         pieces.forEach((piece, i) => {  
-            if (i > 0) emitLine2()          // newline → flush current line  
-            if (piece) {                    // keep inline marks inside the line  
+            if (i > 0) emitLine2()  
+            if (piece) {  
                 segs.push({ text: piece, mark })  
                 rawLine += piece  
+                if (mark !== 'del') rawNew += piece   // FIX: feed new-side buffer  
             }  
         })  
     }  
-    emitLine2()                             // last line has no trailing \n  
+    emitLine2()  
   
     $('text-canvas').innerHTML = `  
       <div class="diff-vertical manuscript-body">  
@@ -213,6 +219,8 @@ function renderDiffView(oldText: string, newText: string, oldV: number, newV: nu
         renderChapterText(newText, currComments)  
     })  
     buildSubsectionNavigation()  
+    markCommentedSentences(currComments)   // FIX: restore 💬/blue highlight on commented sentences  
+    renderComments(currComments)           // FIX: keep comment cards clickable (scroll + active-highlight)  
     resetRevisions()  
 }
 
@@ -414,7 +422,7 @@ async function startDeviceLink() {
                     statusEl.textContent = 'Code expired — reload to get a new one.'
                     return
                 }
-                const res = await fetch(`/api/link/claim/${signer.did}`)
+                const res = await fetch(`/api/link/claim/${signer.did}?code=${code}`)
                 const data = LinkClaimResponseSchema.parse(await res.json())
                 if (data.pending) return
                 const { token, parentToken, email, authorWorkerDelegation, authorDID, workerDID } = data
@@ -482,6 +490,7 @@ function openApproveModal(email: string) {
                 exp: expIn(60 * 60 * 24 * 365),
                 store: ucanStore,
             })
+            console.log(`[app] policy: ${JSON.stringify(delegation.pol)}`)
             const p = await rawIdb.get('wr-delegation')
             if (typeof p !== 'string' || !p.startsWith('gl')) {
                 result('Your session is still in legacy format - sign in once more and try again')

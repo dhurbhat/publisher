@@ -15212,35 +15212,50 @@ function parseSentencesIntoSpans(text) {
 }
 function renderDiffView(oldText, newText, oldV, newV) {
   const lines = [];
-  let buf = "";
-  const flush = () => {
-    const line = buf;
-    buf = "";
-    if (!line.trim()) {
-      lines.push("");
-      return;
-    }
-    lines.push(line);
-  };
   const segs = [];
   let rawLine = "";
-  const emitLine = () => {
-    const raw = rawLine.trim();
-    rawLine = "";
-    const h = raw.match(HEADER);
-    const inner = segs.splice(0).map(
-      (s) => s.mark ? `<${s.mark} class="rev-${s.mark}">${esc2(s.text)}</${s.mark}>` : esc2(s.text)
-    ).join("");
-    if (!raw) {
-      lines.push("");
-      return;
+  let rawNew = "";
+  let sentId = 0;
+  const segmenter = new Intl.Segmenter(void 0, { granularity: "sentence" });
+  const renderWithSentences = (parts, raw) => {
+    const bounds = [...segmenter.segment(raw)].filter((s) => s.segment.trim()).map((s) => s.index + s.segment.length);
+    let html = "", off = 0, bi = 0, open = false;
+    const openSpan = () => {
+      html += `<span class="novel-sentence" data-id="${sentId++}">`;
+      open = true;
+    };
+    const closeSpan = () => {
+      html += "</span>";
+      open = false;
+    };
+    for (const s of parts) {
+      let t = s.text;
+      while (t.length) {
+        if (!open) openSpan();
+        const isNewSide = s.mark !== "del";
+        const room = isNewSide && bi < bounds.length ? bounds[bi] - off : Infinity;
+        const n = Math.min(t.length, room === Infinity ? t.length : room);
+        const chunk = t.slice(0, n);
+        t = t.slice(n);
+        const e = esc2(chunk);
+        html += s.mark ? `<${s.mark} class="rev-${s.mark}">${e}</${s.mark}>` : e;
+        if (isNewSide) {
+          off += n;
+          if (bi < bounds.length && off >= bounds[bi]) {
+            closeSpan();
+            bi++;
+          }
+        }
+      }
     }
-    if (h) lines.push(headerHtml(h[1].length, inner.replace(/^#+\s*/, "")));
-    else lines.push(`<p class="diff-para">${inner}</p>`);
+    if (open) closeSpan();
+    return html;
   };
   const emitLine2 = () => {
     const raw = rawLine;
     rawLine = "";
+    const rawN = rawNew;
+    rawNew = "";
     const parts = segs.splice(0);
     const h = raw.trim().match(HEADER);
     if (h) {
@@ -15257,10 +15272,7 @@ function renderDiffView(oldText, newText, oldV, newV) {
       }).join("");
       lines.push(headerHtml(h[1].length, inner));
     } else if (raw.trim()) {
-      const inner = parts.map(
-        (s) => s.mark ? `<${s.mark} class="rev-${s.mark}">${esc2(s.text)}</${s.mark}>` : esc2(s.text)
-      ).join("");
-      lines.push(`<p class="diff-para">${inner}</p>`);
+      lines.push(`<p class="diff-para">${renderWithSentences(parts, rawN)}</p>`);
     } else {
       lines.push("");
     }
@@ -15273,6 +15285,7 @@ function renderDiffView(oldText, newText, oldV, newV) {
       if (piece) {
         segs.push({ text: piece, mark });
         rawLine += piece;
+        if (mark !== "del") rawNew += piece;
       }
     });
   }
@@ -15288,6 +15301,8 @@ function renderDiffView(oldText, newText, oldV, newV) {
     renderChapterText(newText, currComments);
   });
   buildSubsectionNavigation();
+  markCommentedSentences(currComments);
+  renderComments(currComments);
   resetRevisions();
 }
 function updateRevisionUI() {
@@ -15485,7 +15500,7 @@ async function startDeviceLink() {
           statusEl.textContent = "Code expired \u2014 reload to get a new one.";
           return;
         }
-        const res2 = await fetch(`/api/link/claim/${signer.did}`);
+        const res2 = await fetch(`/api/link/claim/${signer.did}?code=${code}`);
         const data = LinkClaimResponseSchema.parse(await res2.json());
         if (data.pending) return;
         const { token, parentToken, email: email3, authorWorkerDelegation, authorDID, workerDID } = data;
@@ -15559,6 +15574,7 @@ function openApproveModal(email3) {
         exp: expIn(60 * 60 * 24 * 365),
         store: ucanStore
       });
+      console.log(`[app] policy: ${JSON.stringify(delegation.pol)}`);
       const p = await rawIdb.get("wr-delegation");
       if (typeof p !== "string" || !p.startsWith("gl")) {
         result("Your session is still in legacy format - sign in once more and try again");
