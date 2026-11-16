@@ -19,14 +19,18 @@ export type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>()
 
-app.get('/', (c) => c.html('<!DOCTYPE html>' + 
-  <html>  
-    <HeadStyles />  
-    <body>  
-      <WorkspaceLayout />  
-    </body>  
-  </html>  
-))  
+app.get('/', (c) => {
+  c.header('X-Robots-Tag', 'noindex, noai, noimageai')
+  return c.html('<!DOCTYPE html>' +
+    <html>
+      <HeadStyles />
+      <body>
+        <WorkspaceLayout />
+      </body>
+    </html>
+  )
+}
+)
 
 // Static assets: public/ is served automatically via the ASSETS binding  
 // when wrangler has `assets: { directory: "./public" }` configured.  
@@ -52,28 +56,28 @@ const Tabs: FC = () => {
 
       {/* Tab Contents wrapper */}
       <div class="tab-contents" style="padding: 20px 0;">
-          <p id="auth-status-msg" class="subtitle">
-            <b>No authorization was found on this browser</b>
-          </p>
-          <form id="auth-form">
-            <div class="form-group">
-              <label for="email">Reviewer Email</label>
-              <input type="email" id="email" required placeholder="reviewer@example.com" />
-            </div>
-            <div class="form-group">
-              <label for="nonce">6-Digit PIN</label>
-              {/* <input type="text" id="nonce" required pattern="[0-9]{6}" maxlength={6}
+        <p id="auth-status-msg" class="subtitle">
+          <b>No authorization was found on this browser</b>
+        </p>
+        <form id="auth-form">
+          <div class="form-group">
+            <label for="email">Reviewer Email</label>
+            <input type="email" id="email" required placeholder="reviewer@example.com" />
+          </div>
+          <div class="form-group">
+            <label for="nonce">6-Digit PIN</label>
+            {/* <input type="text" id="nonce" required pattern="[0-9]{6}" maxlength={6}
                 placeholder="123456" autocomplete="one-time-code" /> */}
-              <p style="font-size: 0.95rem; color: #6b7280; margin-bottom: 28px; line-height:1.4;">
-                To unlock the manuscript for the very first time,
-                enter the 6-digit numeric PIN shared with you.
-              </p>
-              <input type="text" id="nonce" class="pin-digit-box" autocomplete="one-time-code" placeholder="000000" maxlength={6} inputmode="numeric" required pattern="[0-9]{6}"></input>
-            </div>
-            <button type="submit" id="submit-btn">Get authorization</button>
-          </form>
-          <div id="status-message" class="status hidden" />
-          <div class="auth-divider"></div>
+            <p style="font-size: 0.95rem; color: #6b7280; margin-bottom: 28px; line-height:1.4;">
+              To unlock the manuscript for the very first time,
+              enter the 6-digit numeric PIN shared with you.
+            </p>
+            <input type="text" id="nonce" class="pin-digit-box" autocomplete="one-time-code" placeholder="000000" maxlength={6} inputmode="numeric" required pattern="[0-9]{6}"></input>
+          </div>
+          <button type="submit" id="submit-btn">Get authorization</button>
+        </form>
+        <div id="status-message" class="status hidden" />
+        <div class="auth-divider"></div>
 
         <div id="device-link-section">
           <p class="subtitle">
