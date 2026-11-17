@@ -15614,6 +15614,14 @@ function showWorkspaceView(email3, did) {
     dlink.addEventListener("click", () => openApproveModal(email3));
   }
 }
+var fmtUpdated = (iso) => iso ? new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "America/New_York",
+  timeZoneName: "short"
+}).format(new Date(iso)) : null;
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const signer = await getOrCreateSigner();
@@ -15649,8 +15657,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         showError(e.message);
       }
     });
-    const { chapters, version: version2 } = await loadChapters(signer, authorDid, email3);
-    $("draft-version").innerHTML = `Version: ${version2}`;
+    const { chapters, version: version2, updatedAt } = await loadChapters(signer, authorDid, email3);
+    const stamp = fmtUpdated(updatedAt);
+    $("draft-version").innerHTML = `Version: ${version2}${stamp ? ` \xB7 updated ${stamp}` : ""}`;
     renderChapterList(chapters, (slug) => loadChapter(signer, authorDid, email3, slug).then(({ text, comments, hasDiff }) => {
       currComments = comments;
       renderChapterText(text, comments);

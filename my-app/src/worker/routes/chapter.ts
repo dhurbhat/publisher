@@ -25,17 +25,21 @@ async function loadChapterText(kv: KVNamespace, version: number, slug: string) {
 
     const body = chapter.scenes.map(s => {
         const text = texts.get(`v${version}/${slug}/${s.slug}`) ?? ''
-        const hasHeader = text.startsWith(`# ${s.title}`) ||
-            text.startsWith(`## ${s.title}`) ||
-            text.startsWith(`${s.title}\n`)
+        const norm = (s: string) => s.replace(/[\u2018\u2019]/g, "'").trim()
+        const hasHeader = [`# ${s.title}`, `## ${s.title}`, `${s.title}\n`]
+            .some(h => norm(text).startsWith(norm(h)))
         return `${hasHeader ? '' : `## ${s.title}\n\n`}${text}`
     }).join('\n\n')
 
     return `# ${chapter.title}\n\n${body}`
 }
 
-async function latestVersion(kv: KVNamespace) {
-    return parseInt((await kv.get('meta:latest')) ?? '0', 10)
+async function latest(kv: KVNamespace) {  
+    const [ver, updatedAt] = await Promise.all([  
+        kv.get('meta:latest'),  
+        kv.get('meta:lastUpdated'),  
+    ])  
+    return { version: parseInt(ver ?? '0', 10), updatedAt }  
 }
 
 export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
@@ -43,11 +47,11 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
         '/api/chapters',
         requireChapterCap(ChapterListCap),
         async (c) => {
-            const v = await latestVersion(c.env.NOVEL_TEXT_KV)
+            const {version: v, updatedAt} = await latest(c.env.NOVEL_TEXT_KV)
             const manifest = await c.env.NOVEL_TEXT_KV
                 .get<ChapterEntry[]>(`v${v}/manifest`, 'json')
             const chapters = (manifest ?? []).map(ch => ({ name: ch.slug }))
-            return c.json({ version: v, chapters })
+            return c.json({ version: v, updatedAt, chapters })
         }
     )
 
@@ -64,13 +68,13 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
 
             // ?version=N reads an older snapshot; default = latest  
             const requested = c.req.query('version')
-            const v = requested ? parseInt(requested, 10) : await latestVersion(c.env.NOVEL_TEXT_KV)
+            const v = requested ? parseInt(requested, 10) : (await latest(c.env.NOVEL_TEXT_KV)).version
 
             const text = await loadChapterText(c.env.NOVEL_TEXT_KV, v, slug)
             if (text === null) {
                 return c.json({ error: 'chapter not found' }, 404)
             }
-            const prevText = v > 1 ? await loadChapterText(c.env.NOVEL_TEXT_KV, v-1, slug) : null
+            const prevText = v > 1 ? await loadChapterText(c.env.NOVEL_TEXT_KV, v - 1, slug) : null
             const hasDiff = prevText !== null && prevText !== text
             const resultSet = await c.env.DB.prepare(
                 `SELECT sentence_id, feedback, created_at FROM feedback WHERE chapter_slug = ? AND reader_did = ? ORDER BY sentence_id`
@@ -91,8 +95,8 @@ export function registerChapterRoutes(app: Hono<{ Bindings: Bindings }>) {
                 return c.json({ error: 'chapter slug mismatch' }, 403)
             }
 
-            const latest = await latestVersion(c.env.NOVEL_TEXT_KV)
-            const to = parseInt(c.req.query('to') ?? String(latest), 10)
+            const {version: v} = await latest(c.env.NOVEL_TEXT_KV)
+            const to = parseInt(c.req.query('to') ?? String(v), 10)
             const from = parseInt(c.req.query('from') ?? String(to - 1), 10)
             if (from < 1) {
                 return c.json({ error: 'only one version exists' }, 404)

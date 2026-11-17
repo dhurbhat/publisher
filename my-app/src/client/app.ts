@@ -56,7 +56,7 @@ const invoke = <S extends z.ZodType, Cmd extends string>(
     })
 async function loadChapters(signer: EdDSASigner, authorDid: string, email: string) {
     const inv = await invoke(ChapterListCap, signer, authorDid, { email })
-    return postInvocation<{ chapters: { name: string }[], version: string }>('/api/chapters', inv.bytes)
+    return postInvocation<{ chapters: { name: string }[], version: string, updatedAt: string | null }>('/api/chapters', inv.bytes)
 }
 
 async function loadChapter(signer: EdDSASigner, authorDid: string, email: string, slug: string) {
@@ -533,6 +533,13 @@ function showWorkspaceView(email: string, did: string) {
     }
 }
 
+const fmtUpdated = (iso: string | null) =>  
+  iso ? new Intl.DateTimeFormat('en-US', {  
+    month: 'short', day: 'numeric',  
+    hour: 'numeric', minute: '2-digit',  
+    timeZone: 'America/New_York', timeZoneName: 'short',  
+  }).format(new Date(iso)) : null 
+
 // ---------- bootstrap ----------  
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -583,8 +590,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         })
 
         // chapter list  
-        const { chapters, version } = await loadChapters(signer, authorDid, email)
-        $('draft-version')!.innerHTML = `Version: ${version}`
+        const { chapters, version, updatedAt } = await loadChapters(signer, authorDid, email)
+        const stamp = fmtUpdated(updatedAt)
+        $('draft-version')!.innerHTML = `Version: ${version}${stamp ? ` · updated ${stamp}` : ''}`
         renderChapterList(chapters, slug =>
             loadChapter(signer, authorDid, email, slug)
                 .then(({ text, comments, hasDiff }) => {

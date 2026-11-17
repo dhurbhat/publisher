@@ -4,6 +4,7 @@ import { execSync } from 'child_process'
 
 interface SceneEntry { slug: string, title: string }
 interface ChapterEntry { slug: string, title: string, scenes: SceneEntry[] }
+interface BulkEntry { key: string; value: string }
 
 const USAGE = `  
 👉 Usage: npx tsx publish.ts <path-to-Manuscript> [options]  
@@ -28,11 +29,17 @@ function kvPut(key: string, source: { path?: string, value?: string }, destinati
   execSync(`npx wrangler kv key put "${key}" ${src} --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'ignore' })
 }
 
+function kvBulkPut(entries: BulkEntry[], bulkPath: string, destinationFlag: string) {
+  fs.writeFileSync(bulkPath, JSON.stringify(entries), 'utf8')
+  execSync(`npx wrangler kv bulk put "${bulkPath}" --binding=NOVEL_TEXT_KV ${destinationFlag}`, { stdio: 'inherit' })
+}
+
 function compileAndPublish() {
   const args = process.argv.slice(2)
   const targetPath = args.find(a => !a.startsWith('-'))
   const isRemote = args.includes('--remote')
   const updatedLatest = args.includes('--update-latest')
+  const bulk: BulkEntry[] = []
 
   if (args.includes('--help') || args.includes('-h')) {
     console.log(USAGE)
@@ -132,7 +139,12 @@ function compileAndPublish() {
       const sourceText = fs.readFileSync(path.join(folderPath, file), 'utf8').trim()
       const sourceLines = sourceText.split(/\r?\n/)
 
-      const norm = (s: string) => s.replace(/^#+\s*/, '').trim().toLowerCase()
+      // const norm = (s: string) => s.replace(/^#+\s*/, '').trim().toLowerCase()
+      const norm = (s: string) => s
+        .replace(/^#+\s*/, '')
+        .replace(/[\u2018\u2019]/g, "'")   // ’ ‘ → '  
+        .replace(/[\u201C\u201D]/g, '"')
+        .trim().toLowerCase()
       const titles = new Set([norm(chapterTitle), norm(cleanSceneTitle)])
       let li = 0
       // drop leading lines that restate chapter OR scene title, with or without '#'  
@@ -141,24 +153,20 @@ function compileAndPublish() {
         li++
       }
       const fileText = sourceLines.slice(li).join('\n').trim()
-
-      const sceneTempPath = path.join(tempDir, `${cleanSlug}--${sceneSlug}.txt`)
-      fs.writeFileSync(sceneTempPath, fileText, 'utf8')
       const key = `v${version}/${cleanSlug}/${sceneSlug}`
-      try {
-        kvPut(key, { path: sceneTempPath }, destinationFlag)
-        console.log(`  ➡️  ${key}`)
-      } catch (error: any) { console.error(`  ❌ Failed to push "${key}":`, error.message) }
+      bulk.push({ key: key, value: fileText })
+      console.log(`  ➡️  ${key}`)
       scenes.push({ slug: sceneSlug, title: cleanSceneTitle })
     }
     manifest.push({ slug: cleanSlug, title: chapterTitle, scenes })
   })
-
+  kvBulkPut(bulk, path.join(tempDir, 'bulk.json'), destinationFlag)
   // ---- Write manifest + bump pointer LAST (atomic-ish: readers flip only after all scenes are in) ----  
   const manifestPath = path.join(tempDir, 'manifest.json')
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8')
   kvPut(`v${version}/manifest`, { path: manifestPath }, destinationFlag)
   kvPut('meta:latest', { value: String(version) }, destinationFlag)
+  kvPut('meta:lastUpdated', { value: new Date().toISOString() }, destinationFlag)
 
   fs.rmSync(tempDir, { recursive: true, force: true })
   console.log('\n🏁 CORE MANUSCRIPT TIMELINE INGESTED SUCCESSFULLY.\n')
